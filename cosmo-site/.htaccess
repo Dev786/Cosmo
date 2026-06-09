@@ -1,0 +1,26 @@
+# Cosmo site — Apache config (Hostinger runs Apache + PHP).
+
+# Never serve secrets (.env, .env.example) or server-side includes, even if linked.
+<FilesMatch "^\.env">
+    Require all denied
+</FilesMatch>
+RedirectMatch 404 ^/includes/
+RedirectMatch 404 ^/sql/
+
+# Basic security headers.
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Pretty-ish: serve index.php at the root.
+DirectoryIndex index.php
+
+# Cache static assets for a week.
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 7 days"
+    ExpiresByType application/javascript "access plus 7 days"
+    ExpiresByType image/svg+xml "access plus 30 days"
+</IfModule>

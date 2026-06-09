@@ -1,0 +1,13 @@
+FROM php:8.3-apache
+
+# PDO MySQL for the app; rewrite/headers for .htaccess to behave like Hostinger.
+RUN docker-php-ext-install pdo_mysql >/dev/null \
+ && a2enmod rewrite headers \
+ && sed -ri 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
+
+COPY web-entrypoint.sh /usr/local/bin/web-entrypoint.sh
+RUN chmod +x /usr/local/bin/web-entrypoint.sh
+
+WORKDIR /var/www/html
+ENTRYPOINT ["/usr/local/bin/web-entrypoint.sh"]
+CMD ["apache2-foreground"]

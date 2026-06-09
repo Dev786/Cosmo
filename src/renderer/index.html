@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob:; script-src 'self' file: 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self' file: blob: data:;" />
+  <title>Cosmo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Root fills the OS window, which main grows from 150→370 when chat opens. */
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      -webkit-app-region: drag;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    #app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: row;       /* Cosmo column | chat column */
+      align-items: stretch;
+      position: relative;
+      /* Near-opaque on purpose. The window is `transparent: true`, and on a
+         transparent Electron window backdrop-filter CANNOT blur the OS desktop
+         behind it — it only blurs in-page DOM. At 0.78 the desktop bled through
+         sharp (e.g. a roadmap.sh tab), colliding with Cosmo's own text. 0.97
+         keeps a faint glassy edge while guaranteeing legibility over anything. */
+      background: rgba(255, 255, 255, 0.97);
+      border-radius: 22px;
+      overflow: hidden;          /* clip the chat column to the rounded corners */
+      backdrop-filter: blur(16px) saturate(1.4);
+      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+      /* Hairline edge as an INSET shadow (not a border): it follows the rounded
+         corners and adds zero layout width, so the fixed 150px face column isn't
+         clipped. This is what lets Cosmo stand out on a white background instead
+         of dissolving into it. */
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 4px 24px rgba(0, 0, 0, 0.10), 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    /* Cosmo's fixed-width column — stays put whether or not chat is open, so
+       his face never gets covered. The chat column is added to the right. */
+    #cosmo-col {
+      position: relative;
+      flex: 0 0 150px;
+      /* Hard-pin the width. A flex item defaults to min-width:auto, so when the
+         avatar's content grows (eyes scale up + the listening sound-wave arcs that
+         sit at right:-24px), the column itself would widen past 150px — dragging
+         every right-anchored control (✕, mic, chat) off the fixed-width window
+         where overflow:hidden clips them. min/max-width:150 stops that. */
+      min-width: 150px;
+      max-width: 150px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ─── Right dashboard rail ──────────────────────────────────────────────
+       The controls (mic / mute / chat / tasks) live here, not crowding the face.
+       Hidden at rest; on hover over Cosmo, main grows the OS window by 48px and
+       the rail flips to display:flex. Mutually exclusive with chat/setup/panel,
+       which own larger widths (the renderer collapses the rail before they open). */
+    #dash-rail {
+      flex: 0 0 48px;
+      height: 100%;
+      display: none;             /* shown via .open (renderer drives it on hover) */
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: linear-gradient(180deg, rgba(247,249,252,0.96), rgba(239,242,247,0.96));
+      border-left: 1px solid rgba(0,0,0,0.06);
+      -webkit-app-region: no-drag;
+    }
+    #dash-rail.open { display: flex; animation: dash-in 0.16s ease; }
+    @keyframes dash-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+    /* The dots kept their IDs (so the existing click handlers still bind), but in
+       the rail they flow as a vertical stack instead of being pinned bottom-right. */
+    #dash-rail #mic-dot, #dash-rail #mute-dot,
+    #dash-rail #chat-toggle, #dash-rail #panel-toggle {
+      position: relative; top: auto; left: auto; bottom: auto; right: auto;
+    }
+
+    /* Grab-handle: a faint tick on the face's right edge hinting the dashboard is
+       there. The whole window is the hover target; this is just the affordance. */
+    #dash-handle {
+      position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
+      width: 4px; height: 30px; border-radius: 3px;
+      background: rgba(120,130,150,0.22);
+      transition: background 0.15s ease;
+      pointer-events: none; z-index: 5;
+    }
+    #cosmo-col:hover #dash-handle { background: rgba(120,130,150,0.45); }
+
+    /* Attention bounce — a Cosmo-initiated heads-up (reminder / callout / recap) when
+       he's on screen. Bounces the whole face column; the talk animation rides on top. */
+    @keyframes cosmo-nudge {
+      0%, 100% { transform: translateY(0); }
+      20% { transform: translateY(-9px); }
+      45% { transform: translateY(0); }
+      65% { transform: translateY(-4px); }
+      85% { transform: translateY(0); }
+    }
+    #cosmo-col.nudge { animation: cosmo-nudge 0.65s cubic-bezier(0.28, 0.84, 0.42, 1); }
+
+    /* Uniform shrink for the whole avatar (eyes + mouth + blush + floaters). The
+       pack still renders at full size and owns all the animation/gaze transforms;
+       we just scale the wrapper around it, so nothing in the pack needs to change.
+       Tune --avatar-scale to taste. */
+    #avatar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: scale(var(--avatar-scale, 0.58));
+      transform-origin: center;
+      -webkit-app-region: no-drag;
+    }
+
+    #eyes-container {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      /* Interactive: clicks/pets must reach the renderer, so NOT a drag region.
+         The window is dragged via #drag-handle instead. */
+      -webkit-app-region: no-drag;
+      cursor: pointer;
+    }
+
+    /* Thin invisible strip at the very top to drag the whole window, since the
+       avatar itself is now click-interactive. */
+    #drag-handle {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 22px;
+      -webkit-app-region: drag;
+      z-index: 35;
+    }
+
+    /* Mic dot — always visible, primary voice input method */
+    #mic-dot {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(74, 158, 255, 0.92);
+      border: 2px solid rgba(255,255,255,0.7);
+      cursor: pointer;
+      opacity: 1;
+      transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+      -webkit-app-region: no-drag;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(74,158,255,0.4);
+      /* Above the avatar: in listening/speaking the image gets a CSS `filter`,
+         which creates a stacking context that would otherwise paint over this
+         auto-z-index dot — that's why the mic "hid" only in listen mode. */
+      z-index: 31;
+    }
+
+    /* Mic body */
+    #mic-dot::before {
+      content: '';
+      width: 7px;
+      height: 9px;
+      border-radius: 4px;
+      background: white;
+      display: block;
+      position: absolute;
+      top: 5px;
+    }
+
+    /* Mic stand arc */
+    #mic-dot::after {
+      content: '';
+      width: 13px;
+      height: 6px;
+      border: 2px solid white;
+      border-top: none;
+      border-radius: 0 0 7px 7px;
+      display: block;
+      position: absolute;
+      bottom: 3px;
+    }
+
+    #mic-dot:hover {
+      transform: scale(1.12);
+      box-shadow: 0 3px 14px rgba(74,158,255,0.55);
+    }
+
+    #mic-dot.recording {
+      background: rgba(255, 65, 65, 0.92);
+      border-color: rgba(255,255,255,0.8);
+      animation: mic-pulse 0.9s ease-in-out infinite;
+      box-shadow: 0 2px 12px rgba(255,65,65,0.5);
+    }
+
+    /* Always-on listening: gentle breathing glow, not the red recording state */
+    #mic-dot.always-on {
+      background: rgba(120, 190, 120, 0.9);
+      box-shadow: 0 0 0 0 rgba(120,190,120,0.5);
+      animation: mic-breathe 2.6s ease-in-out infinite;
+    }
+    #mic-dot.always-on.recording {
+      background: rgba(255, 65, 65, 0.92);
+      animation: mic-pulse 0.9s ease-in-out infinite;
+    }
+
+    @keyframes mic-pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.12); }   /* gentler — stays inside the rounded corner */
+    }
+
+    @keyframes mic-breathe {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(120,190,120,0.45); }
+      50% { box-shadow: 0 0 0 4px rgba(120,190,120,0.0); }
+    }
+
+    /* Mute dot — sits just left of the mic. Full mute: silences his voice AND
+       stops listening, until tapped again. */
+    #mute-dot {
+      position: absolute;
+      bottom: 12px;
+      right: 40px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(120, 130, 150, 0.92);
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      line-height: 1;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+      transition: transform 0.15s ease, background 0.2s ease;
+      z-index: 30;
+    }
+    #mute-dot:hover { transform: scale(1.12); }
+    /* Muted state — red, to read as "off". */
+    #mute-dot.active {
+      background: rgba(255, 80, 80, 0.95);
+      box-shadow: 0 2px 12px rgba(255,80,80,0.5);
+    }
+
+    /* While muted, grey the mic so it reads as disabled. */
+    #mic-dot.muted {
+      background: rgba(150, 150, 160, 0.55);
+      box-shadow: none;
+      animation: none;
+      cursor: default;
+    }
+
+    /* Chat toggle — sits left of the mute dot, opens/closes the text chat */
+    #chat-toggle {
+      position: absolute;
+      bottom: 12px;
+      right: 68px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(120, 130, 150, 0.92);
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      line-height: 1;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+      transition: transform 0.15s ease, background 0.2s ease;
+      z-index: 30;
+    }
+    #chat-toggle:hover { transform: scale(1.12); }
+    #chat-toggle.active { background: rgba(74, 158, 255, 0.95); }
+
+    /* Close (✕) for the chat panel */
+    #chat-close {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.14);
+      color: rgba(255, 255, 255, 0.75);
+      font-size: 11px;
+      line-height: 16px;
+      text-align: center;
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+      z-index: 6;
+      display: none;
+    }
+    #chat-area.visible #chat-close { display: block; }
+    #chat-close:hover { background: rgba(255, 255, 255, 0.28); color: #fff; }
+
+    /* Boot loader — covers the window until voice + ears + turn detection load */
+    #boot-overlay {
+      position: absolute;
+      inset: 0;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(16px) saturate(1.4);
+      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      z-index: 50;
+      transition: opacity 0.4s ease;
+      -webkit-app-region: drag;
+    }
+    #boot-overlay.done { opacity: 0; pointer-events: none; }
+
+    #boot-dots { display: flex; gap: 7px; }
+    #boot-dots span {
+      width: 11px; height: 11px; border-radius: 50%;
+      background: #1e1e2e;
+      animation: boot-bounce 1.1s ease-in-out infinite;
+    }
+    #boot-dots span:nth-child(2) { animation-delay: 0.18s; }
+    #boot-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+    @keyframes boot-bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+      40% { transform: translateY(-7px); opacity: 1; }
+    }
+
+    #boot-status {
+      font-size: 10.5px;
+      color: rgba(40,40,55,0.7);
+      letter-spacing: 0.2px;
+    }
+
+    /* Chat area — a full-height column to the RIGHT of Cosmo (revealed when the
+       window grows). Uses the vertical space instead of overlaying his face. */
+    #chat-area {
+      position: relative;
+      flex: 0 0 220px;
+      height: 100%;
+      overflow: hidden;
+      background: rgba(20, 20, 30, 0.96);   /* near-opaque: desktop can't blur behind a transparent window, so a low alpha bled through (see #app) */
+      backdrop-filter: blur(8px);
+      border-left: 1px solid rgba(255,255,255,0.08);
+      display: none;
+      flex-direction: column;
+      -webkit-app-region: no-drag;
+      border-radius: 0 22px 22px 0;
+    }
+
+    #chat-area.visible {
+      display: flex;
+    }
+
+    #chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 22px 10px 4px;   /* top room for the ✕ button */
+      font-size: 11px;
+      line-height: 1.4;
+      scrollbar-width: none;
+    }
+
+    #chat-messages::-webkit-scrollbar { display: none; }
+
+    .msg {
+      margin-bottom: 4px;
+      word-wrap: break-word;
+    }
+
+    .msg.user {
+      color: rgba(255,255,255,0.5);
+      text-align: right;
+    }
+
+    .msg.bot {
+      color: rgba(255,255,255,0.88);
+    }
+
+    #chat-input-row {
+      display: flex;
+      align-items: center;
+      padding: 3px 6px 5px;
+      gap: 4px;
+    }
+
+    #chat-input {
+      flex: 1;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      color: white;
+      font-size: 11px;
+      padding: 3px 8px;
+      outline: none;
+    }
+
+    #chat-input::placeholder { color: rgba(255,255,255,0.35); }
+    #chat-input:focus { border-color: rgba(74,158,255,0.6); }
+
+    #chat-send {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(74,158,255,0.8);
+      border: none;
+      cursor: pointer;
+      color: white;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Quick-capture mode */
+    #chat-area.capture-mode #chat-messages { display: none; }
+    #chat-area.capture-mode #chat-input-row {
+      height: 100%;
+      align-items: center;
+    }
+
+    /* ─── Setup / onboarding overlay ─────────────────────────────────────── */
+    #setup-overlay {
+      position: absolute;
+      inset: 0;
+      border-radius: 22px;
+      background: rgba(248, 249, 252, 0.98);
+      backdrop-filter: blur(18px) saturate(1.3);
+      -webkit-backdrop-filter: blur(18px) saturate(1.3);
+      display: none;
+      flex-direction: column;
+      padding: 16px 16px 14px;
+      overflow-y: auto;
+      z-index: 60;
+      -webkit-app-region: drag;     /* empty areas drag the window */
+      color: #1e1e2e;
+      font-size: 12px;
+    }
+    #setup-overlay.visible { display: flex; }
+    #setup-overlay::-webkit-scrollbar { width: 0; }
+
+    #setup-title { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+    #setup-sub { font-size: 11px; color: rgba(40,40,55,0.6); margin: 2px 0 12px; }
+    #setup-close-x {
+      position: absolute; top: 12px; right: 14px;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: rgba(0,0,0,0.06); color: rgba(40,40,55,0.7);
+      font-size: 12px; line-height: 20px; text-align: center;
+      cursor: pointer; -webkit-app-region: no-drag; display: none;
+    }
+    #setup-overlay.reopen #setup-close-x { display: block; }
+    #setup-close-x:hover { background: rgba(0,0,0,0.12); }
+
+    .setup-label {
+      display: flex; align-items: baseline; justify-content: space-between;
+      font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: rgba(40,40,55,0.55);
+      margin: 12px 0 5px;
+    }
+    .setup-label a {
+      font-weight: 500; text-transform: none; letter-spacing: 0;
+      color: #4a9eff; text-decoration: none; -webkit-app-region: no-drag;
+    }
+    .setup-label a:hover { text-decoration: underline; }
+
+    #setup-overlay select,
+    #setup-overlay input {
+      width: 100%; -webkit-app-region: no-drag;
+      background: #fff; border: 1px solid rgba(0,0,0,0.14);
+      border-radius: 9px; padding: 8px 9px; font-size: 12px; color: #1e1e2e;
+      outline: none;
+    }
+    #setup-overlay select:focus,
+    #setup-overlay input:focus { border-color: rgba(74,158,255,0.7); }
+    #setup-model-custom { margin-top: 6px; }
+
+    #setup-freetier, #setup-tts-freetier, #setup-stt-freetier {
+      font-size: 11px; color: #2f9e5e; margin-top: 5px; font-weight: 500;
+    }
+
+    /* Tabs (Brain / Voice / Ears) + their panes */
+    #setup-tabs { display: flex; gap: 4px; margin: 4px 0; -webkit-app-region: no-drag; }
+    .setup-tab {
+      flex: 1; cursor: pointer; border: none; background: rgba(0,0,0,0.05);
+      color: rgba(40,40,55,0.7); border-radius: 8px; padding: 7px 4px;
+      font-size: 11px; font-weight: 600; transition: background 0.15s ease;
+    }
+    .setup-tab:hover { background: rgba(0,0,0,0.09); }
+    .setup-tab.active { background: #4a9eff; color: #fff; }
+    .setup-pane { display: none; flex-direction: column; }
+    .setup-pane.active { display: flex; }
+
+    .setup-hint { font-size: 11px; color: rgba(40,40,55,0.55); margin-top: 5px; line-height: 1.35; }
+    .ok-hint { color: #2f9e5e; font-weight: 600; display: none; }
+
+    /* Checkbox row (e.g. always-listen toggle). Drags disabled so the click lands. */
+    .setup-check {
+      -webkit-app-region: no-drag; display: flex; align-items: center; gap: 8px;
+      margin-top: 12px; font-size: 12.5px; font-weight: 600; color: #1e1e2e; cursor: pointer;
+    }
+    .setup-check input { width: auto; margin: 0; accent-color: #4a9eff; cursor: pointer; }
+
+    .setup-mini {
+      -webkit-app-region: no-drag; cursor: pointer; align-self: flex-start;
+      margin-top: 12px; border-radius: 9px; padding: 7px 12px;
+      font-size: 11.5px; font-weight: 600; color: #1e1e2e;
+      background: rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.12);
+      transition: filter 0.15s ease;
+    }
+    .setup-mini:hover { filter: brightness(0.97); }
+    .setup-mini:disabled { opacity: 0.5; cursor: default; }
+
+    .setup-acct-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; }
+    .setup-acct-name { font-size: 13px; font-weight: 700; color: #1e1e2e; }
+    .setup-acct-badge {
+      font-size: 10.5px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+      background: rgba(0,0,0,0.07); color: rgba(40,40,55,0.7);
+    }
+    .setup-acct-badge.ok { background: rgba(47,158,94,0.14); color: #2f9e5e; }
+
+    #setup-status {
+      min-height: 16px; margin: 12px 0 8px; font-size: 11px; font-weight: 500;
+    }
+    #setup-status.ok { color: #2f9e5e; }
+    #setup-status.err { color: #e2574c; }
+    #setup-status.busy { color: rgba(40,40,55,0.6); }
+
+    #setup-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 8px; }
+    #setup-actions button {
+      flex: 1; -webkit-app-region: no-drag; cursor: pointer;
+      border-radius: 10px; padding: 9px; font-size: 12px; font-weight: 600;
+      border: 1px solid transparent; transition: filter 0.15s ease;
+    }
+    #setup-actions button:hover { filter: brightness(0.97); }
+    #setup-test { background: rgba(0,0,0,0.06); color: #1e1e2e; border-color: rgba(0,0,0,0.12); }
+    #setup-save { background: #4a9eff; color: #fff; }
+    #setup-actions button:disabled { opacity: 0.5; cursor: default; }
+
+    /* Settings gear — top-left of the avatar, low-profile, reveals on hover */
+    #setup-gear {
+      position: absolute; top: 4px; left: 6px;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(120,130,150,0.85); color: #fff;
+      font-size: 10px; line-height: 18px; text-align: center;
+      cursor: pointer; -webkit-app-region: no-drag; z-index: 40;
+      opacity: 0.25; transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+    #cosmo-col:hover #setup-gear { opacity: 0.9; }
+    #setup-gear:hover { transform: scale(1.12); }
+
+    /* Close ✕ — top-right, mirrors the gear. Hides Cosmo to the menu-bar tray
+       (he keeps running; reopen from the tray). Red on hover = the close cue.
+       z-index sits above the listening/speaking CSS filter's stacking context. */
+    #close-cosmo {
+      position: absolute; top: 4px; right: 6px;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(120,130,150,0.85); color: #fff;
+      font-size: 10px; line-height: 18px; text-align: center;
+      cursor: pointer; -webkit-app-region: no-drag; z-index: 40;
+      opacity: 0.25; transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+    }
+    #cosmo-col:hover #close-cosmo { opacity: 0.9; }
+    #close-cosmo:hover { transform: scale(1.12); background: rgba(232,87,76,0.95); }
+
+    /* ─── Tasks & reminders panel ──────────────────────────────────────────── */
+    /* Sits left of the chat toggle, same pill styling as the other dots. */
+    #panel-toggle {
+      position: absolute;
+      bottom: 12px;
+      right: 96px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(120, 130, 150, 0.92);
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      line-height: 1;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+      transition: transform 0.15s ease, background 0.2s ease;
+      z-index: 30;
+    }
+    #panel-toggle:hover { transform: scale(1.12); }
+    #panel-toggle.active { background: rgba(74, 158, 255, 0.95); }
+
+    /* Full-window overlay, mirrors #setup-overlay's surface. */
+    #panel-overlay {
+      position: absolute;
+      inset: 0;
+      border-radius: 22px;
+      background: rgba(248, 249, 252, 0.98);
+      backdrop-filter: blur(18px) saturate(1.3);
+      -webkit-backdrop-filter: blur(18px) saturate(1.3);
+      display: none;
+      flex-direction: column;
+      padding: 16px 16px 14px;
+      overflow: hidden;
+      z-index: 60;
+      -webkit-app-region: drag;
+      color: #1e1e2e;
+      font-size: 12px;
+    }
+    #panel-overlay.visible { display: flex; }
+    #panel-title { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+    #panel-close-x {
+      position: absolute; top: 12px; right: 14px;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: rgba(0,0,0,0.06); color: rgba(40,40,55,0.7);
+      font-size: 12px; line-height: 20px; text-align: center;
+      cursor: pointer; -webkit-app-region: no-drag;
+    }
+    #panel-close-x:hover { background: rgba(0,0,0,0.12); }
+
+    #panel-tabs { display: flex; gap: 4px; margin: 8px 0; -webkit-app-region: no-drag; }
+    .panel-tab {
+      flex: 1; cursor: pointer; border: none; background: rgba(0,0,0,0.05);
+      color: rgba(40,40,55,0.7); border-radius: 8px; padding: 7px 2px;
+      font-size: 10px; font-weight: 600; transition: background 0.15s ease;
+      -webkit-app-region: no-drag; letter-spacing: -0.3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .panel-tab:hover { background: rgba(0,0,0,0.09); }
+    .panel-tab.active { background: #4a9eff; color: #fff; }
+
+    /* A pane fills the remaining height so its list scrolls inside it. */
+    .panel-pane { display: none; flex-direction: column; flex: 1; min-height: 0; }
+    .panel-pane.active { display: flex; }
+
+    .panel-addrow { display: flex; gap: 6px; margin-bottom: 8px; -webkit-app-region: no-drag; }
+    .panel-addrow input {
+      flex: 1; background: #fff; border: 1px solid rgba(0,0,0,0.14);
+      border-radius: 9px; padding: 8px 9px; font-size: 12px; color: #1e1e2e; outline: none;
+    }
+    .panel-addrow input:focus { border-color: rgba(74,158,255,0.7); }
+    .panel-addrow button {
+      flex: 0 0 auto; -webkit-app-region: no-drag; cursor: pointer;
+      border: none; background: #4a9eff; color: #fff;
+      border-radius: 9px; padding: 0 13px; font-size: 18px; font-weight: 600; line-height: 1;
+    }
+    .panel-addrow button:hover { filter: brightness(0.97); }
+
+    .panel-list {
+      flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+      -webkit-app-region: no-drag; padding-right: 2px;
+    }
+    .panel-list::-webkit-scrollbar { width: 0; }
+
+    .panel-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      background: #fff; border: 1px solid rgba(0,0,0,0.1);
+      border-radius: 9px; padding: 8px 9px;
+    }
+    .panel-item.done { opacity: 0.55; }
+    .panel-check {
+      flex: 0 0 auto; width: 16px; height: 16px; margin-top: 1px;
+      border-radius: 5px; border: 1.5px solid rgba(0,0,0,0.3);
+      cursor: pointer; -webkit-app-region: no-drag;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: #fff; line-height: 1;
+    }
+    .panel-item.done .panel-check { background: #2f9e5e; border-color: #2f9e5e; }
+    .panel-text { flex: 1; line-height: 1.35; word-break: break-word; }
+    .panel-item.done .panel-text { text-decoration: line-through; }
+    .panel-when { display: block; font-size: 10.5px; color: rgba(40,40,55,0.55); margin-top: 2px; }
+    /* Source headline: looks/acts like a link, opens in the real browser on click. */
+    .panel-link { color: #2f6fd0; cursor: pointer; -webkit-app-region: no-drag; }
+    .panel-link:hover { text-decoration: underline; }
+    .panel-del {
+      flex: 0 0 auto; cursor: pointer; -webkit-app-region: no-drag;
+      color: rgba(40,40,55,0.4); font-size: 14px; line-height: 1; padding: 0 2px;
+    }
+    .panel-del:hover { color: #e2574c; }
+    .panel-empty { font-size: 12px; color: rgba(40,40,55,0.5); text-align: center; padding: 22px 0; }
+
+    .panel-actions { display: flex; margin-top: 8px; -webkit-app-region: no-drag; }
+    .panel-actions button {
+      -webkit-app-region: no-drag; cursor: pointer; align-self: flex-start;
+      border-radius: 9px; padding: 7px 12px; font-size: 11.5px; font-weight: 600;
+      color: #1e1e2e; background: rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.12);
+    }
+    .panel-actions button:hover { filter: brightness(0.97); }
+  </style>
+  <!-- ─── Cute skin ───────────────────────────────────────────────────────────
+       A soft, pastel re-skin scoped ENTIRELY to the config (#setup-overlay) and the
+       tabbed panel (#panel-overlay). It only overrides those two surfaces and their
+       children, so Cosmo's column, eyes, and mic dots are untouched. Layered on top
+       of the base styles (same/﹥ specificity + later source order), so it's reversible
+       by deleting this one block. Direction from 2025 cute-UI guidance: pastel accents,
+       high radii, puffy soft shadows, rounded display font, clear focus rings. -->
+  <style id="cute-skin">
+    #setup-overlay, #panel-overlay {
+      --c-grad: linear-gradient(135deg, #6f9bff 0%, #9a86ff 100%);
+      --c-accent: #6f86f0;
+      --c-ink: #33334d;
+      --c-ink-soft: rgba(51, 51, 77, 0.55);
+      --c-tab: rgba(124, 130, 210, 0.10);
+      --c-tab-hover: rgba(124, 130, 210, 0.18);
+      --c-line: rgba(120, 125, 200, 0.18);
+      --c-card-shadow: 0 6px 18px rgba(95, 105, 175, 0.16);
+      --c-ring: 0 0 0 3px rgba(122, 140, 255, 0.26);
+      --c-mint: #28b487;
+      --c-danger: #f0716a;
+      --c-r: 14px;
+      --c-r-pill: 999px;
+      --c-font-round: ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    /* Soft pastel glass surfaces + a gentle pop on open */
+    #setup-overlay, #panel-overlay {
+      background: linear-gradient(180deg, rgba(252, 252, 255, 0.985) 0%, rgba(244, 243, 254, 0.985) 100%);
+    }
+    #setup-overlay.visible, #panel-overlay.visible { animation: cute-pop 0.26s cubic-bezier(0.2, 0.9, 0.3, 1.25); }
+    @keyframes cute-pop { from { opacity: 0; transform: scale(0.985); } to { opacity: 1; transform: scale(1); } }
+
+    /* Tabs + Save bar stay put; the ACTIVE pane scrolls on its own — so a long pane
+       (Accounts/Gmail, or Brain with a custom model) never gets cut off. */
+    #setup-overlay { overflow: hidden; }
+    #setup-overlay .setup-pane.active {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto;
+      padding-right: 4px;        /* breathing room beside the scroll edge */
+      /* Not a drag region: a draggable pane would move the window on two-finger
+         scroll (and swallow clicks on its links). Drag the window from the title
+         area instead. This is what makes the pane actually scrollable. */
+      -webkit-app-region: no-drag;
+    }
+    #setup-overlay .setup-pane::-webkit-scrollbar { width: 0; }
+
+    /* Every setup link must be clickable — links inside a .setup-hint (e.g. "Open
+       console →") aren't in a .setup-label, so they'd otherwise sit on the drag layer. */
+    #setup-overlay a { -webkit-app-region: no-drag; cursor: pointer; }
+    #setup-overlay .setup-hint a { color: var(--c-accent); text-decoration: none; }
+    #setup-overlay .setup-hint a:hover { text-decoration: underline; }
+
+    /* Friendly rounded titles */
+    #setup-title, #panel-title {
+      font-family: var(--c-font-round); font-weight: 800; font-size: 16px;
+      color: var(--c-ink); letter-spacing: 0.2px;
+    }
+    #setup-sub { color: var(--c-ink-soft); }
+
+    /* Tabs → soft pills with a gradient active state + a tiny lift */
+    #setup-overlay .setup-tab, #panel-overlay .panel-tab {
+      background: var(--c-tab); color: var(--c-ink-soft);
+      border-radius: 12px; font-family: var(--c-font-round); font-weight: 700;
+      box-shadow: none; transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, color 0.16s ease;
+    }
+    #setup-overlay .setup-tab:hover, #panel-overlay .panel-tab:hover {
+      background: var(--c-tab-hover); transform: translateY(-1px);
+    }
+    #setup-overlay .setup-tab.active, #panel-overlay .panel-tab.active {
+      background: var(--c-grad); color: #fff; transform: translateY(-1px);
+      box-shadow: 0 5px 13px rgba(111, 139, 255, 0.42);
+    }
+
+    /* Inputs & selects → rounder, softer, with a gentle focus glow */
+    #setup-overlay select, #setup-overlay input,
+    #panel-overlay .panel-addrow input {
+      border-radius: 12px; border: 1.5px solid var(--c-line);
+      transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+    }
+    #setup-overlay select:focus, #setup-overlay input:focus,
+    #panel-overlay .panel-addrow input:focus {
+      border-color: var(--c-accent); box-shadow: var(--c-ring); background: #fdfdff;
+    }
+
+    /* Section labels — keep them tidy, just warmer & less shouty */
+    #setup-overlay .setup-label { color: var(--c-ink-soft); letter-spacing: 0.4px; }
+    #setup-overlay .setup-label a, #setup-overlay #setup-keylink { color: var(--c-accent); }
+
+    /* Primary buttons → pill with the accent gradient + press feedback */
+    #setup-overlay #setup-save {
+      background: var(--c-grad); border: none; border-radius: var(--c-r-pill);
+      box-shadow: 0 5px 14px rgba(111, 139, 255, 0.4); font-family: var(--c-font-round);
+      transition: transform 0.14s ease, box-shadow 0.16s ease, filter 0.14s ease;
+    }
+    #setup-overlay #setup-save:hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(111, 139, 255, 0.5); filter: none; }
+    #setup-overlay #setup-save:active { transform: scale(0.97); }
+
+    /* Secondary buttons (test / preview / clear) → soft lavender pills */
+    #setup-overlay .setup-mini, #setup-overlay #setup-test,
+    #panel-overlay .panel-actions button {
+      background: var(--c-tab); border: 1px solid var(--c-line); border-radius: var(--c-r-pill);
+      color: var(--c-ink); font-family: var(--c-font-round);
+      transition: transform 0.14s ease, background 0.16s ease;
+    }
+    #setup-overlay .setup-mini:hover, #setup-overlay #setup-test:hover,
+    #panel-overlay .panel-actions button:hover { background: var(--c-tab-hover); transform: translateY(-1px); filter: none; }
+    #setup-overlay .setup-mini:active, #panel-overlay .panel-actions button:active { transform: scale(0.97); }
+
+    /* The add (＋) buttons → cute round gradient blobs */
+    #panel-overlay .panel-addrow button {
+      background: var(--c-grad); border-radius: 50%; width: 38px; height: 38px;
+      box-shadow: 0 4px 11px rgba(111, 139, 255, 0.42);
+      transition: transform 0.14s ease, box-shadow 0.16s ease; padding: 0;
+    }
+    #panel-overlay .panel-addrow button:hover { transform: translateY(-1px) scale(1.04); filter: none; }
+    #panel-overlay .panel-addrow button:active { transform: scale(0.94); }
+
+    /* List items → soft floating cards instead of hard-bordered rows */
+    #panel-overlay .panel-item {
+      border: 1px solid rgba(120, 125, 200, 0.10); border-radius: var(--c-r);
+      box-shadow: 0 3px 10px rgba(95, 105, 175, 0.10);
+      transition: transform 0.14s ease, box-shadow 0.16s ease;
+    }
+    #panel-overlay .panel-item:hover { transform: translateY(-1px); box-shadow: var(--c-card-shadow); }
+    #panel-overlay .panel-check { border-radius: 7px; border-color: rgba(111, 139, 255, 0.45); }
+    #panel-overlay .panel-item.done .panel-check { background: var(--c-mint); border-color: var(--c-mint); }
+    #panel-overlay .panel-del:hover { color: var(--c-danger); }
+
+    /* Account rows → matching soft cards */
+    #setup-overlay .setup-acct-row {
+      background: #fff; border: 1px solid rgba(120, 125, 200, 0.10);
+      border-radius: var(--c-r); padding: 11px 12px; box-shadow: 0 3px 10px rgba(95, 105, 175, 0.10);
+    }
+    #setup-overlay .setup-acct-badge { border-radius: var(--c-r-pill); }
+    #setup-overlay .setup-acct-badge.ok { background: rgba(40, 180, 135, 0.15); color: var(--c-mint); }
+
+    /* Checkboxes pick up the accent; close ✕ gets a soft hover */
+    #setup-overlay .setup-check input { accent-color: var(--c-accent); }
+    #setup-overlay #setup-close-x:hover, #panel-overlay #panel-close-x:hover { background: rgba(111, 139, 255, 0.16); color: var(--c-accent); }
+    #setup-overlay #setup-status.ok { color: var(--c-mint); }
+
+    @media (prefers-reduced-motion: reduce) {
+      #setup-overlay.visible, #panel-overlay.visible { animation: none; }
+      #setup-overlay *, #panel-overlay * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="cosmo-col">
+      <div id="drag-handle"></div>
+      <div id="setup-gear" title="AI setup — vendor, model & key">⚙</div>
+      <div id="close-cosmo" title="Hide Cosmo — reopen from the menu-bar icon">✕</div>
+      <div id="avatar"><div id="eyes-container"></div></div>
+      <div id="dash-handle"></div>
+    </div>
+    <div id="dash-rail">
+      <div id="mic-dot" title="Click to talk"></div>
+      <div id="mute-dot" title="Mute — silence & stop listening">🔊</div>
+      <div id="chat-toggle" title="Toggle chat">💬</div>
+      <div id="panel-toggle" title="Tasks & reminders">📋</div>
+    </div>
+    <div id="chat-area">
+      <div id="chat-close" title="Close chat">✕</div>
+      <div id="chat-messages"></div>
+      <div id="chat-input-row">
+        <input id="chat-input" type="text" placeholder="Ask Cosmo..." autocomplete="off" spellcheck="false" />
+        <button id="chat-send">➤</button>
+      </div>
+    </div>
+    <div id="setup-overlay">
+      <div id="setup-close-x" title="Close">✕</div>
+      <div id="setup-title">Set up Cosmo</div>
+      <div id="setup-sub">Brain, voice & ears — pick what you like.</div>
+
+      <div id="setup-tabs">
+        <button class="setup-tab active" data-tab="brain">🧠 Brain</button>
+        <button class="setup-tab" data-tab="voice">🔊 Voice</button>
+        <button class="setup-tab" data-tab="ears">👂 Ears</button>
+        <button class="setup-tab" data-tab="accounts">🔌 Accounts</button>
+      </div>
+
+      <!-- BRAIN: LLM vendor + model + key -->
+      <div class="setup-pane active" data-pane="brain">
+        <label class="setup-label" for="setup-vendor">Vendor</label>
+        <select id="setup-vendor"></select>
+        <div id="setup-freetier"></div>
+
+        <label class="setup-label" for="setup-model">Model</label>
+        <select id="setup-model"></select>
+        <input id="setup-model-custom" type="text" placeholder="custom model id…" autocomplete="off" spellcheck="false" />
+
+        <label class="setup-label" for="setup-key" id="setup-key-label">
+          <span>API key</span>
+          <a id="setup-keylink" href="#" target="_blank" rel="noopener">Get a key →</a>
+        </label>
+        <input id="setup-key" type="password" placeholder="paste your key" autocomplete="off" spellcheck="false" />
+        <button class="setup-mini" id="setup-test">Test connection</button>
+      </div>
+
+      <!-- VOICE: TTS provider + voice + key -->
+      <div class="setup-pane" data-pane="voice">
+        <label class="setup-label" for="setup-tts">Voice provider</label>
+        <select id="setup-tts"></select>
+        <div id="setup-tts-freetier"></div>
+
+        <label class="setup-label" for="setup-voice">Voice</label>
+        <select id="setup-voice"></select>
+        <input id="setup-voice-custom" type="text" placeholder="custom voice id…" autocomplete="off" spellcheck="false" />
+
+        <label class="setup-label" for="setup-tts-key" id="setup-tts-key-label">
+          <span>API key</span>
+          <a id="setup-tts-keylink" href="#" target="_blank" rel="noopener">Get a key →</a>
+        </label>
+        <input id="setup-tts-key" type="password" placeholder="paste your key" autocomplete="off" spellcheck="false" />
+        <div id="setup-tts-keyok" class="setup-hint ok-hint">✓ key on file</div>
+        <button class="setup-mini" id="setup-preview">▶ Preview voice</button>
+      </div>
+
+      <!-- EARS: STT provider + model + key -->
+      <div class="setup-pane" data-pane="ears">
+        <label class="setup-label" for="setup-stt-provider">Provider</label>
+        <select id="setup-stt-provider"></select>
+        <div id="setup-stt-freetier"></div>
+
+        <label class="setup-label" for="setup-stt">Model</label>
+        <select id="setup-stt"></select>
+
+        <label class="setup-label" for="setup-stt-key" id="setup-stt-key-label">
+          <span>API key</span>
+          <a id="setup-stt-keylink" href="#" target="_blank" rel="noopener">Get a key →</a>
+        </label>
+        <input id="setup-stt-key" type="password" placeholder="paste your key" autocomplete="off" spellcheck="false" />
+        <div id="setup-stt-keyok" class="setup-hint ok-hint">✓ key on file</div>
+        <div class="setup-hint">Local runs fully on-device — your voice never leaves your Mac. Cloud providers apply right away; a local model change applies next launch.</div>
+
+        <label class="setup-check" for="setup-always-listen">
+          <input type="checkbox" id="setup-always-listen" />
+          <span>Always listen for the “Cosmo” wake word</span>
+        </label>
+        <div class="setup-hint">Off by default — Cosmo only listens when you tap the mic. Turn this on to keep the mic open and wake him hands-free by saying “Cosmo”. Applies right away.</div>
+
+        <label class="setup-check" for="setup-smart-focus">
+          <input type="checkbox" id="setup-smart-focus" />
+          <span>Smart Focus — let your AI label unfamiliar apps</span>
+        </label>
+        <div class="setup-hint">Off by default. When on, Cosmo asks your configured model to categorize apps it can't place on its own — sending only the app name and window title (never URLs or history), cached so it runs rarely. Off keeps focus detection fully local.</div>
+      </div>
+
+      <!-- ACCOUNTS: calendar (native) + Gmail (Google OAuth) -->
+      <div class="setup-pane" data-pane="accounts">
+        <div class="setup-acct-row">
+          <span class="setup-acct-name">📅 Calendar</span>
+          <span class="setup-acct-badge ok">Ready — uses macOS Calendar, no setup</span>
+        </div>
+        <div class="setup-hint">Cosmo reads today's events &amp; your next meeting from the macOS Calendar app (whatever accounts you've added there). Read-only.</div>
+
+        <div class="setup-acct-row" style="margin-top:14px;">
+          <span class="setup-acct-name">✉️ Gmail</span>
+          <span class="setup-acct-badge" id="setup-gmail-badge">Not connected</span>
+        </div>
+        <div id="setup-google-fields">
+          <div class="setup-hint">Create a <b>Desktop app</b> OAuth client in Google Cloud Console, enable the Gmail API, then paste its Client ID &amp; secret. <a id="setup-google-link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Open console →</a></div>
+          <label class="setup-label" for="setup-google-id">Client ID</label>
+          <input id="setup-google-id" type="text" placeholder="…apps.googleusercontent.com" autocomplete="off" spellcheck="false" />
+          <label class="setup-label" for="setup-google-secret">Client secret</label>
+          <input id="setup-google-secret" type="password" placeholder="GOCSPX-…" autocomplete="off" spellcheck="false" />
+          <button class="setup-mini" id="setup-google-connect">Connect Gmail (opens browser)</button>
+        </div>
+        <button class="setup-mini" id="setup-google-disconnect" style="display:none;">Disconnect Gmail</button>
+        <div class="setup-hint">Read-only — Cosmo can check &amp; summarize mail, never send. Your client secret &amp; sign-in are stored encrypted in your Mac's keychain.</div>
+      </div>
+
+      <div id="setup-status"></div>
+      <div id="setup-actions">
+        <button id="setup-save">Save &amp; start</button>
+      </div>
+    </div>
+    <div id="panel-overlay">
+      <div id="panel-close-x" title="Close">✕</div>
+      <div id="panel-title">Cosmo</div>
+
+      <div id="panel-tabs">
+        <button class="panel-tab active" data-ptab="tasks">✅ Tasks</button>
+        <button class="panel-tab" data-ptab="reminders">⏰ Reminders</button>
+        <button class="panel-tab" data-ptab="notes">📝 Notes</button>
+        <button class="panel-tab" data-ptab="sources">📰 Sources</button>
+      </div>
+
+      <!-- TASKS: add row + checklist + clear-completed -->
+      <div class="panel-pane active" data-ppane="tasks">
+        <div class="panel-addrow">
+          <input id="panel-task-input" type="text" placeholder="Add a task…" autocomplete="off" spellcheck="false" />
+          <button id="panel-task-add" title="Add task">＋</button>
+        </div>
+        <div class="panel-list" id="panel-tasks"></div>
+        <div class="panel-actions">
+          <button id="panel-tasks-clear">Clear completed</button>
+        </div>
+      </div>
+
+      <!-- REMINDERS: upcoming list (soonest first) + clear-all -->
+      <div class="panel-pane" data-ppane="reminders">
+        <div class="panel-list" id="panel-reminders"></div>
+        <div class="panel-actions">
+          <button id="panel-reminders-clear">Clear all</button>
+        </div>
+      </div>
+
+      <!-- NOTES: jot row + list (newest first) + clear-all -->
+      <div class="panel-pane" data-ppane="notes">
+        <div class="panel-addrow">
+          <input id="panel-note-input" type="text" placeholder="Jot a note…" autocomplete="off" spellcheck="false" />
+          <button id="panel-note-add" title="Add note">＋</button>
+        </div>
+        <div class="panel-list" id="panel-notes"></div>
+        <div class="panel-actions">
+          <button id="panel-notes-clear">Clear all</button>
+        </div>
+      </div>
+
+      <!-- SOURCES: where Cosmo's news came from — title links out, outlet + time -->
+      <div class="panel-pane" data-ppane="sources">
+        <div class="panel-list" id="panel-sources"></div>
+        <div class="panel-actions">
+          <button id="panel-sources-clear">Clear all</button>
+        </div>
+      </div>
+    </div>
+    <div id="boot-overlay">
+      <div id="boot-dots"><span></span><span></span><span></span></div>
+      <div id="boot-status">waking up…</div>
+    </div>
+  </div>
+  <script src="./main.js"></script>
+</body>
+</html>

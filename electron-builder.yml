@@ -1,0 +1,43 @@
+appId: com.personal.cosmo
+productName: Cosmo
+copyright: Copyright © 2026 Devashish Rana
+
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  icon: assets/icon.icns
+  darkModeSupport: true
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - src/renderer/index.html
+  - assets/**/*
+  - "!src/**/*.ts"
+  - "!**/__tests__/**"
+  - "!**/__mocks__/**"
+
+extraResources:
+  - from: assets/
+    to: assets/
+    filter: ["**/*"]
+  # License + attribution must travel with the distribution. The LGPL-3.0 of the
+  # bundled libvips (see THIRD_PARTY_NOTICES.md §2) requires its license texts be
+  # included; the rest document Cosmo's Apache-2.0 grant and third-party credits.
+  - from: LICENSE
+    to: LICENSE
+  - from: NOTICE
+    to: NOTICE
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+  - from: THIRD_PARTY_LICENSES.txt
+    to: THIRD_PARTY_LICENSES.txt
+  - from: LICENSE.LGPL-3.0.txt
+    to: LICENSE.LGPL-3.0.txt
+  - from: LICENSE.GPL-3.0.txt
+    to: LICENSE.GPL-3.0.txt

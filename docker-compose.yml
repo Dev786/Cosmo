@@ -1,0 +1,40 @@
+# Local testing for the Cosmo site.
+#   docker compose up -d --build   → open http://localhost:8090
+#   docker compose down            → stop (add -v to wipe the DB)
+#
+# DB selection (decided at web-container startup): if the remote DB_HOST in
+# cosmo-site/.env is reachable, PHP uses that; otherwise it falls back to the
+# local `db` MySQL service below, which auto-runs sql/schema.sql on first boot.
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: cosmo
+      MYSQL_USER: cosmo
+      MYSQL_PASSWORD: cosmo
+    ports:
+      - "3309:3306"   # host 3309 → avoids clashing with other local MySQL containers
+    volumes:
+      - ./cosmo-site/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - cosmo_db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 4s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.web
+    ports:
+      - "8090:80"
+    volumes:
+      - ./cosmo-site:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  cosmo_db:

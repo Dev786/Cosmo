@@ -1,0 +1,6 @@
+# Secrets — never commit. Real values live here; .env.example is the template.
+.env
+
+# OS / editor
+.DS_Store
+*.log
