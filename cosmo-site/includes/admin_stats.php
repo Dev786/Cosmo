@@ -100,49 +100,57 @@ function currency_totals(PDO $db): array
                        GROUP BY COALESCE(NULLIF(currency,''),'INR') ORDER BY cnt DESC")->fetchAll();
 }
 
-/** ---- unified event feed (visits + leads + tips) ---- */
+/** ---- event feed (visits + leads + tips) ---- */
 
-/** One normalized stream of all three event tables. Columns line up across the UNION;
- *  missing fields are '' / NULL per source. Kept as a function so feed + count share it. */
-function events_union_sql(): string
+/** One normalized SELECT per source table — identical 9 columns/aliases across all
+ *  three, so they UNION cleanly for the "all" view and each also stands alone when a
+ *  single type is requested. A filtered view selects its source table directly rather
+ *  than running the full UNION and filtering a derived `kind` column with `WHERE kind=?`.
+ *  That's faster (one table, not three) and avoids MySQL error 1267 ("illegal mix of
+ *  collations") when the bound param's collation differs from the derived column's on
+ *  mixed-collation hosts (e.g. utf8mb4_unicode_ci tables + a utf8mb4_general_ci link). */
+function event_sources(): array
 {
-    return "(
-        SELECT created_at AS ts, 'visit' AS kind, '' AS email, COALESCE(country,'') AS country,
-               COALESCE(path,'') AS path, COALESCE(ip,'') AS ip, NULL AS amount_paise, '' AS currency, '' AS status
-          FROM visits
-        UNION ALL
-        SELECT created_at, 'lead', email, COALESCE(country,''), '', '', NULL, '', IF(consent=1,'subscribed','')
-          FROM leads
-        UNION ALL
-        SELECT created_at, 'tip', email, '', '', '', amount_paise, COALESCE(NULLIF(currency,''),'INR'), status
-          FROM donations
-    ) ev";
+    return [
+        'visit' => "SELECT created_at AS ts, 'visit' AS kind, '' AS email, COALESCE(country,'') AS country,
+                           COALESCE(path,'') AS path, COALESCE(ip,'') AS ip, NULL AS amount_paise, '' AS currency, '' AS status
+                      FROM visits",
+        'lead'  => "SELECT created_at AS ts, 'lead' AS kind, email AS email, COALESCE(country,'') AS country,
+                           '' AS path, '' AS ip, NULL AS amount_paise, '' AS currency, IF(consent=1,'subscribed','') AS status
+                      FROM leads",
+        'tip'   => "SELECT created_at AS ts, 'tip' AS kind, email AS email, '' AS country,
+                           '' AS path, '' AS ip, amount_paise AS amount_paise, COALESCE(NULLIF(currency,''),'INR') AS currency, status AS status
+                      FROM donations",
+    ];
+}
+
+/** Underlying table for a single event type (for cheap COUNTs). '' for 'all'. */
+function event_type_table(string $type): string
+{
+    return ['visit' => 'visits', 'lead' => 'leads', 'tip' => 'donations'][$type] ?? '';
+}
+
+/** FROM-source for a feed: one table's SELECT when a type is given, else all three UNION'd.
+ *  $type only ever picks a hard-coded SELECT — it is never interpolated into SQL. */
+function events_source_sql(string $type): string
+{
+    $src = event_sources();
+    if (isset($src[$type])) return '(' . $src[$type] . ') ev';
+    return '(' . implode("\n        UNION ALL\n", array_values($src)) . ') ev';
 }
 
 function events_feed(PDO $db, string $type, int $limit, int $offset): array
 {
-    $limit = max(1, min(200, $limit));
+    $limit  = max(1, min(200, $limit));
     $offset = max(0, $offset);
-    [$where, $params] = events_filter($type);
-    $sql = "SELECT * FROM " . events_union_sql() . " $where ORDER BY ts DESC LIMIT $limit OFFSET $offset";
-    $st = $db->prepare($sql);
-    $st->execute($params);
-    return $st->fetchAll();
+    $sql = "SELECT * FROM " . events_source_sql($type) . " ORDER BY ts DESC LIMIT $limit OFFSET $offset";
+    return $db->query($sql)->fetchAll();
 }
 
 function events_count(PDO $db, string $type): int
 {
-    [$where, $params] = events_filter($type);
-    $sql = "SELECT COUNT(*) FROM " . events_union_sql() . " $where";
-    $st = $db->prepare($sql);
-    $st->execute($params);
-    return (int)$st->fetchColumn();
-}
-
-/** Build the WHERE clause + params for a kind filter ('all' → no filter). */
-function events_filter(string $type): array
-{
-    return in_array($type, ['visit', 'lead', 'tip'], true)
-        ? ['WHERE kind = :k', [':k' => $type]]
-        : ['', []];
+    // Filtered → a single-table COUNT (no union, no derived column, no collation '=').
+    $table = event_type_table($type);
+    if ($table !== '') return (int)$db->query("SELECT COUNT(*) FROM $table")->fetchColumn();
+    return (int)$db->query("SELECT COUNT(*) FROM " . events_source_sql('all'))->fetchColumn();
 }

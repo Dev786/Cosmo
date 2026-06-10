@@ -20,7 +20,9 @@ try {
     $total = events_count($db, $type);
     $rows  = events_feed($db, $type, $perPage, $offset);
 } catch (Throwable $ex) {
-    $dbError = 'Database not reachable. Check .env DB settings.';
+    // Admin-only page: surface the real cause (connection vs query vs permission)
+    // instead of a generic mask, so the failure is actually diagnosable.
+    $dbError = 'Database error: ' . $ex->getMessage();
 }
 $pages = max(1, (int)ceil($total / $perPage));
 $qs = fn(string $t, int $p): string => 'events.php?type=' . urlencode($t) . '&page=' . $p;
