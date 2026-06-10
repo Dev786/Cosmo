@@ -65,11 +65,11 @@ $year = date('Y');
   };
 </script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-<script src="assets/js/eyes.js"></script>
-<script src="assets/js/site.js"></script>
-<script src="assets/js/funnel.js"></script>
+<script src="assets/js/eyes.js<?= asset_v('assets/js/eyes.js') ?>"></script>
+<script src="assets/js/site.js<?= asset_v('assets/js/site.js') ?>"></script>
+<script src="assets/js/funnel.js<?= asset_v('assets/js/funnel.js') ?>"></script>
 <?php foreach (($page_scripts ?? []) as $s): ?>
-<script src="<?= e($s) ?>"></script>
+<script src="<?= e($s) ?><?= asset_v($s) ?>"></script>
 <?php endforeach; ?>
 </body>
 </html>

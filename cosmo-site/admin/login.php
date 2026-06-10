@@ -28,7 +28,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cosmo admin</title>
-<link rel="stylesheet" href="../assets/css/style.css">
+<link rel="stylesheet" href="../assets/css/style.css<?= asset_v('assets/css/style.css') ?>">
 <style>body{display:grid;place-items:center;min-height:100vh}.login{width:min(360px,92vw);text-align:center}</style>
 </head><body>
 <form class="login card" method="post">

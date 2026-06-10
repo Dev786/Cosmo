@@ -35,6 +35,19 @@ function env(string $key, ?string $default = null): ?string
     return ($val === null || $val === '') ? $default : $val;
 }
 
+/** Cache-busting suffix for a local CSS/JS asset, keyed on its file mtime so a
+ *  browser refetches the instant the file changes — and keeps the cached copy
+ *  until then. Returns e.g. "?v=1718045123", or "" if the file can't be found.
+ *  Pass the docroot-relative path; admin pages keep the "../" in their href and
+ *  we stat by stripping any leading "./" or "../". */
+function asset_v(string $relPath): string
+{
+    static $root = null;
+    if ($root === null) $root = dirname(__DIR__); // cosmo-site/ docroot
+    $m = @filemtime($root . '/' . ltrim($relPath, './'));
+    return $m ? '?v=' . $m : '';
+}
+
 /** Assembled config, sourced entirely from `.env`. Returns null when `.env` is
  *  absent so public pages still render before the box is configured. */
 function cosmo_config(): ?array

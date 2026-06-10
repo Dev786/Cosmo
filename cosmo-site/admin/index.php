@@ -25,7 +25,7 @@ $rupees = fn(int $paise) => '₹' . number_format($paise / 100, 0);
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cosmo admin · dashboard</title>
-<link rel="stylesheet" href="../assets/css/style.css">
+<link rel="stylesheet" href="../assets/css/style.css<?= asset_v('assets/css/style.css') ?>">
 <style>
   body{background:var(--paper)}
   .adminbar{display:flex;align-items:center;gap:14px;padding:14px clamp(16px,4vw,40px);background:var(--ink);color:#fff}

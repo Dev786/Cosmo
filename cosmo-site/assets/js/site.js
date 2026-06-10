@@ -44,6 +44,30 @@
     }, { passive: true });
   }
 
+  // ---- 1c. mobile nav (hamburger toggle) ----
+  var nav = document.querySelector('.nav');
+  var burger = document.getElementById('nav-burger');
+  if (nav && burger) {
+    var navLinks = document.getElementById('nav-links');
+    var setNav = function (open) {
+      nav.classList.toggle('is-open', open);
+      burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      burger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    };
+    burger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      setNav(!nav.classList.contains('is-open'));
+    });
+    if (navLinks) navLinks.addEventListener('click', function (e) {
+      if (e.target.closest('a')) setNav(false);
+    });
+    document.addEventListener('click', function (e) {
+      if (nav.classList.contains('is-open') && !e.target.closest('.nav')) setNav(false);
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setNav(false); });
+    window.addEventListener('resize', function () { if (window.innerWidth > 860) setNav(false); });
+  }
+
   // ---- 2. reading-progress bar ----
   var bar = document.getElementById('arch-progress');
   if (bar) {

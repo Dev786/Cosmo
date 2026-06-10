@@ -127,6 +127,19 @@ section { padding: clamp(72px, 10vw, 132px) 0; }
   padding: 9px 16px; border-radius: var(--r-pill); transition: transform .15s, background .2s, box-shadow .2s;
 }
 .nav__github:hover { transform: translateY(-1px); background: #000; box-shadow: var(--shadow-m); }
+/* hamburger — hidden on desktop, revealed ≤860px; bars morph to an ✕ when open */
+.nav__burger {
+  display: none; margin-left: 6px; width: 40px; height: 34px; padding: 0;
+  background: transparent; border: 1px solid var(--line); border-radius: 9px; cursor: pointer;
+  flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  transition: background .15s;
+}
+.nav__burger:hover { background: rgba(30,30,46,.05); }
+.nav__burger span { display: block; width: 18px; height: 2px; border-radius: 2px; background: var(--ink); transition: transform .2s ease, opacity .2s ease; }
+.nav.is-open .nav__burger span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.nav.is-open .nav__burger span:nth-child(2) { opacity: 0; }
+.nav.is-open .nav__burger span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+@keyframes navDrop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 
 /* ---------- mini eyes logo (pure CSS blink) — matches the cute classic eye:
    dark eye, glossy white shine up-left, tiny catch-light top-right. ---------- */
@@ -751,7 +764,16 @@ code { font-family: var(--mono); font-size: .9em; background: rgba(30,30,46,.06)
 @media (max-width: 860px) {
   .grid--3, .grid--2, .diag-3 { grid-template-columns: 1fr; }
   .diag-row { grid-auto-flow: row; grid-auto-columns: auto; }
-  .nav__links { display: none; }
+  .nav__burger { display: inline-flex; }
+  /* links collapse into a dropdown panel under the bar, toggled by the burger */
+  .nav__links {
+    position: absolute; top: 100%; left: 0; right: 0; margin: 0;
+    display: none; flex-direction: column; gap: 2px; padding: 8px 16px 14px;
+    background: rgba(255, 255, 255, 0.985); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    border-bottom: 1px solid var(--line); box-shadow: var(--shadow-m);
+  }
+  .nav.is-open .nav__links { display: flex; animation: navDrop .16s ease; }
+  .nav__links a { padding: 11px 12px; font-size: 1rem; }
   section { padding: 56px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
