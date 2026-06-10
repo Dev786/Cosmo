@@ -685,6 +685,11 @@ code { font-family: var(--mono); font-size: .9em; background: rgba(30,30,46,.06)
 .chapter li { margin: 4px 0; }
 .q-lead { font-size: 1.12rem; color: var(--muted); font-style: italic; max-width: 60ch; }
 
+/* Part II — sets the bonus "payments" track apart from the Cosmo chapters */
+.arch-part { border-top: 3px solid var(--blue); margin-top: 26px; }
+.arch-part .chapter__num { color: var(--blue); }
+.arch-toc__part { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+
 /* callouts */
 .callout { border-radius: var(--r-sm); padding: 16px 18px 16px 20px; margin: 22px 0; border-left: 4px solid; font-size: .96rem; }
 .callout p:last-child { margin-bottom: 0; }

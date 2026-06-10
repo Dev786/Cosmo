@@ -143,6 +143,11 @@ require __DIR__ . '/includes/header.php';
       <li><a href="#core"><span class="arch-toc__num">12</span>The safe machine</a></li>
       <li><a href="#boot"><span class="arch-toc__num">13</span>How Cosmo wakes up</a></li>
       <li><a href="#build"><span class="arch-toc__num">14</span>Build your own Cosmo</a></li>
+      <li class="arch-toc__part"><a href="#payments"><span class="arch-toc__num">II</span>Bonus · how this site takes payments</a></li>
+      <li><a href="#pay-flow"><span class="arch-toc__num">15</span>A safe checkout, end to end</a></li>
+      <li><a href="#pay-keys"><span class="arch-toc__num">16</span>Keys, secrets &amp; signatures</a></li>
+      <li><a href="#pay-webhooks"><span class="arch-toc__num">17</span>Webhooks — the backstop</a></li>
+      <li><a href="#pay-money"><span class="arch-toc__num">18</span>One checkout, many currencies</a></li>
     </ol>
   </aside>
 
@@ -572,7 +577,138 @@ memory/YYYY-MM-DD.md   # daily notes — compaction folds into these</pre>
         <a class="btn btn--primary js-funnel" href="#">Get the code →</a>
         <a class="btn btn--ghost" href="features.php">See the full feature list</a>
       </div>
-      <div class="chapter-nav"><a href="#boot">← Waking up</a><a href="#map">Back to the top ↑</a></div>
+      <div class="chapter-nav"><a href="#boot">← Waking up</a><a href="#payments">Bonus: how this site takes payments ↓</a></div>
+    </section>
+
+    <!-- ───────── Part II · Payments (bonus, educational) ───────── -->
+    <section class="chapter arch-part" id="payments">
+      <span class="chapter__num">Part II · A different system, same instincts</span>
+      <h2>Bonus: how this very site takes payments</h2>
+      <p class="q-lead">You just took Cosmo apart. Here's a second, much smaller system — the "buy me a coffee" button on this very page — and it leans on the same instincts: one owner per job, a contract you can swap behind, and a hard line that secrets never cross.</p>
+      <p>The goal is modest: let a visitor leave an optional tip in their own currency, then hand back the GitHub link — on a plain PHP site with no payment SDK bundled in. The whole thing reduces to <strong>three ideas</strong> and <strong>one pattern</strong> you've already met. The three ideas: the browser is never trusted, the secret never leaves the server, and every payment is confirmed twice. The one pattern: each payment processor hides behind a single contract — the same contract-plus-registry shape that carried all of Part I.</p>
+      <div class="callout callout--trade">
+        <span class="callout__k">What you won't see here</span>
+        <p>No routes, no file names, no copy-paste endpoints — on purpose. This is the <em>shape</em> of a safe integration, the part that's the same whether you use Razorpay, PayPal, or Stripe, so you can build your own rather than clone ours.</p>
+      </div>
+      <div class="chapter-nav"><a href="#build">← Build your own Cosmo</a><a href="#pay-flow">Next: a safe checkout →</a></div>
+    </section>
+
+    <!-- 15 -->
+    <section class="chapter" id="pay-flow">
+      <span class="chapter__num">Chapter 15 · Payments — the flow</span>
+      <h2>A safe checkout, end to end</h2>
+      <p class="q-lead">A visitor wants to leave a $5 tip. Where does the money actually change hands — and which parts of this is the browser allowed to decide? (Almost none of it.)</p>
+      <p>The browser is hostile territory: anyone can open dev-tools and change a number. So the rule is strict — the browser may <em>start</em> a payment and <em>display</em> the provider's checkout, but the <strong>amount, the verification, and the reward are all decided on your server</strong>. The payment provider (Razorpay for ₹, PayPal for other currencies) is the only thing that actually moves money; your server is the only thing trusted to say it happened.</p>
+      <ol class="flow-steps">
+        <li><b>Browser asks your server to start a tip</b><small>it sends an amount + currency — but the server re-checks that amount against a minimum; the page's number is never trusted on its own</small></li>
+        <li><b>Server creates an order with the provider</b><small>server-to-server, using the secret key; the browser gets back only an order id + your public identifier — never the secret</small></li>
+        <li><b>The provider's checkout opens in the browser</b><small>card form or wallet, hosted by the provider — your site never sees card details</small></li>
+        <li><b>The visitor pays the provider directly</b><small>money moves between the visitor and the provider, not through your server</small></li>
+        <li><b>Server confirms with the provider</b><small>it verifies a signature, or captures the order server-side — and believes only the provider's own answer, never a "success" flag from the page</small></li>
+        <li><b>Confirmed → server unlocks the reward</b><small>flip the record to paid, hand back the GitHub link</small></li>
+      </ol>
+      <div class="diagram">
+        <div class="diag-layers">
+          <div class="diag-layer diag-box--blue"><b>Browser · untrusted</b> <small>holds the public identifier only · opens the provider's checkout · can be tampered with, so it decides nothing</small></div>
+          <div class="diag-bound">the trust line — the secret key and every "is this really paid?" decision stay on this side</div>
+          <div class="diag-layer diag-box--ink"><b>Your server · trusted</b> <small>holds the secret · creates the order · verifies the payment · releases the reward</small></div>
+        </div>
+        <p class="diagram__cap">the browser may start and display a payment · only the server may decide it succeeded</p>
+      </div>
+      <div class="callout callout--why">
+        <span class="callout__k">Why the browser decides nothing</span>
+        <p>It's the same lesson as Cosmo's privacy line (Chapter 04): trust is a property of <em>where you draw the boundary</em>, not a promise you make. Treat every value from the page as a <em>request</em> to be re-checked, and a tampered amount or a faked "it worked" simply can't get past the server.</p>
+      </div>
+      <div class="chapter-nav"><a href="#payments">← Bonus intro</a><a href="#pay-keys">Next: keys &amp; secrets →</a></div>
+    </section>
+
+    <!-- 16 -->
+    <section class="chapter" id="pay-keys">
+      <span class="chapter__num">Chapter 16 · Payments — credentials</span>
+      <h2>Keys, secrets &amp; signatures</h2>
+      <p class="q-lead">Every provider hands you two strings that look alike: a <em>publishable</em> key and a <em>secret</em> key. Swap them by accident and you either break checkout or hand the world your account.</p>
+      <p>Three credentials, and the whole integration's safety is just keeping them in the right place:</p>
+      <ul>
+        <li><strong>Publishable key / client id — a token that's safe in public.</strong> It only <em>identifies</em> your account to the provider. It can start a checkout but can't move money or read anything. This is the one value allowed into the browser.</li>
+        <li><strong>Secret key — never leaves the server.</strong> It <em>authenticates</em> your server when it creates or captures an order. In the browser it would let anyone charge as you, so it lives only in an environment file the web server can read and the public can't.</li>
+        <li><strong>Webhook secret — proves the provider is the one calling.</strong> Used to confirm a server-to-server notification genuinely came from the provider and wasn't forged (full webhooks next chapter).</li>
+      </ul>
+      <p class="contract__cap">where each credential is allowed to live</p>
+      <pre class="code">PUBLIC  · in the page    →  publishable key / client id   <span>// identify only</span>
+SECRET  · on the server  →  secret key                    <span>// create &amp; capture orders</span>
+SECRET  · on the server  →  webhook secret                <span>// verify provider callbacks</span></pre>
+      <p>Confirmation comes in two flavours, and a provider gives you one or the other:</p>
+      <ul>
+        <li><strong>Signature check.</strong> After payment, the provider hands the browser a signature. Your server recomputes it from the order id + payment id using the secret key, and believes the payment only if they match — proof nothing was tampered with in transit.</li>
+        <li><strong>Server-side capture.</strong> Instead, your server <em>asks</em> the provider directly: "did this order complete, and for how much?" You trust only that reply, and cross-check the amount and currency against what you stored — so a tampered amount can't unlock the reward.</li>
+      </ul>
+      <p class="contract__cap">confirming a signed payment — runs on the server, with the secret key</p>
+      <pre class="code">expected = hmac_sha256(order_id + "|" + payment_id, <b>secret_key</b>)
+if (expected !== signature_from_browser) reject()   <span>// forged or tampered</span>
+markPaidOnce(order_id)                               <span>// verified → release the reward</span></pre>
+      <div class="callout callout--rule">
+        <span class="callout__k">The one rule that matters</span>
+        <p>The secret key and the webhook secret <strong>never</strong> appear in HTML, JavaScript, or any file the public can fetch — only the publishable token ships to the browser. If a secret ever lands in front-end code or a screenshot, treat it as burned and rotate it immediately.</p>
+      </div>
+      <div class="chapter-nav"><a href="#pay-flow">← The flow</a><a href="#pay-webhooks">Next: webhooks →</a></div>
+    </section>
+
+    <!-- 17 -->
+    <section class="chapter" id="pay-webhooks">
+      <span class="chapter__num">Chapter 17 · Payments — webhooks</span>
+      <h2>Webhooks — the backstop when the tab closes</h2>
+      <p class="q-lead">The visitor pays, then closes the tab before the "it worked" call reaches your server. Did you just lose the payment?</p>
+      <p>No — because the browser was never the only path. A <strong>webhook</strong> is the provider calling <em>your server directly</em>, server-to-server, the moment a payment settles. It doesn't depend on the tab staying open, the network holding, or the page not being refreshed. And it's <strong>signed</strong> with the webhook secret from the last chapter, so your server can tell a real event from a forged one.</p>
+      <p>The catch is that confirmation can now arrive <em>twice</em> — the browser's callback and the webhook, or a provider retrying. So the write that marks a tip paid must be <strong>idempotent</strong>: flip the record from pending → paid exactly once, and quietly ignore any later copy. Releasing the reward twice is precisely the bug this prevents.</p>
+      <div class="diagram">
+        <div class="diag-flow">
+          <div class="diag-row">
+            <div class="diag-box diag-box--blue"><b>Browser confirm</b><small>fast feedback · may never arrive</small></div>
+            <div class="diag-box diag-box--ink"><b>Signed webhook</b><small>server-to-server · the reliable source of truth</small></div>
+          </div>
+          <div class="diag-arrow">↓ each verified, then ↓</div>
+          <div class="diag-box diag-box--pink"><b>mark paid — once</b><small>idempotent: first writer wins · duplicates ignored</small></div>
+          <div class="diag-arrow">↓</div>
+          <div class="diag-box"><b>reward released</b><small>the GitHub link, exactly one time</small></div>
+        </div>
+        <p class="diagram__cap">two independent confirmations, one idempotent write — a closed tab never loses a payment, a retry never double-counts it</p>
+      </div>
+      <div class="callout callout--why">
+        <span class="callout__k">Why two paths</span>
+        <p>They do different jobs. The browser callback is instant feedback for the person who just paid; the webhook is the truth that survives closed tabs and flaky networks. Build both, make the write idempotent, and the edge cases stop being edge cases.</p>
+      </div>
+      <div class="chapter-nav"><a href="#pay-keys">← Credentials</a><a href="#pay-money">Next: many currencies →</a></div>
+    </section>
+
+    <!-- 18 -->
+    <section class="chapter" id="pay-money">
+      <span class="chapter__num">Chapter 18 · Payments — one checkout, many currencies</span>
+      <h2>One checkout, many currencies</h2>
+      <p class="q-lead">An Indian visitor should pay in ₹ through one provider; everyone else in their own currency through another. How do you do that without four copies of the checkout?</p>
+      <p>With the exact boundary pattern from Part I — <strong>a contract plus a registry</strong>. A small <em>pure</em> function turns a visitor's rough region into a currency, a minimum tip, and which processor handles it. Each processor — one for ₹, one for everything else — hides behind a single shared interface: <em>create an order · verify it · capture it</em>. A registry hands back whichever one the currency selected, and the checkout code above never knows which it got. Adding a third processor tomorrow is a new adapter, not a rewrite.</p>
+      <div class="diagram">
+        <div class="diag-flow">
+          <div class="diag-box"><b>visitor's region</b><small>resolved server-side</small></div>
+          <div class="diag-arrow">↓ one pure function</div>
+          <div class="diag-box diag-box--ink"><b>currency · minimum · processor</b><small>₹ floor · $/€/£ floor · which adapter</small></div>
+          <div class="diag-arrow">↓ registry picks the adapter</div>
+          <div class="diag-row">
+            <div class="diag-box diag-box--blue"><b>₹ → processor A</b><small>same interface</small></div>
+            <div class="diag-box diag-box--blue"><b>others → processor B</b><small>same interface</small></div>
+          </div>
+        </div>
+        <p class="diagram__cap">one pure router · interchangeable processors behind one contract · the same shape as Cosmo's packs, tools, and providers</p>
+      </div>
+      <div class="callout callout--trade">
+        <span class="callout__k">You've seen this before</span>
+        <p>This is the contract-plus-registry boundary from Chapters 03, 07, and 08 — now applied to money. Learn the shape once and it keeps paying off: swap an implementation, never edit a neighbour. A safe checkout isn't a special skill; it's the same architecture, pointed at payments.</p>
+      </div>
+      <p>That's the whole system: three ideas — an untrusted browser, server-only secrets, confirmation that arrives twice and writes once — and one pattern you already knew. The "Get Cosmo" button at the top runs exactly this flow.</p>
+      <div class="center" style="margin-top:30px">
+        <a class="btn btn--primary js-funnel" href="#">Try the checkout →</a>
+        <a class="btn btn--ghost" href="#payments">Re-read Part II ↑</a>
+      </div>
+      <div class="chapter-nav"><a href="#pay-webhooks">← Webhooks</a><a href="#map">Back to the top ↑</a></div>
     </section>
 
   </div>
