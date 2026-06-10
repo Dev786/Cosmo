@@ -30,11 +30,35 @@ CREATE TABLE IF NOT EXISTS donations (
     id                   BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     created_at           DATETIME     NOT NULL,
     email                VARCHAR(255),
-    amount_paise         INT          NOT NULL,        -- Razorpay works in the smallest unit
+    amount_paise         INT          NOT NULL,        -- minor units of `currency` (paise/cents/pence)
     currency             VARCHAR(8)   NOT NULL DEFAULT 'INR',
-    razorpay_order_id    VARCHAR(64),
-    razorpay_payment_id  VARCHAR(64),
+    razorpay_order_id    VARCHAR(64),                  -- generic provider order id (Razorpay or PayPal)
+    razorpay_payment_id  VARCHAR(64),                  -- generic provider payment/capture id
     status               VARCHAR(24)  NOT NULL DEFAULT 'created',  -- created | paid | failed
+    processor            VARCHAR(16),                  -- razorpay | paypal
+    country              VARCHAR(2),                   -- ISO-2 at order time
+    ip_hash              CHAR(64),                     -- salted; never a raw IP
     INDEX idx_don_created (created_at),
     INDEX idx_don_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Webhook de-duplication: each provider event recorded once (idempotent delivery).
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    processor   VARCHAR(16) NOT NULL,
+    event_id    VARCHAR(80) NOT NULL,
+    type        VARCHAR(64) NOT NULL,
+    received_at DATETIME    NOT NULL,
+    UNIQUE KEY uniq_event (processor, event_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Per-IP fixed-window rate limiting for the payment endpoints.
+CREATE TABLE IF NOT EXISTS rate_limits (
+    id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    ip_hash      CHAR(64)    NOT NULL,
+    action       VARCHAR(32) NOT NULL,
+    window_start DATETIME    NOT NULL,
+    hits         INT         NOT NULL DEFAULT 1,
+    UNIQUE KEY uniq_bucket (ip_hash, action, window_start),
+    INDEX idx_rl_window (window_start)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

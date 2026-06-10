@@ -44,7 +44,7 @@ $rzp = (cosmo_config()['razorpay'] ?? ['preset_amounts' => [99, 199, 499]]);
   // Friendly eyes on the support hero (purely decorative).
   window.addEventListener('DOMContentLoaded', function () {
     var box = document.getElementById('support-eyes');
-    if (box && window.CosmoEyes) { var ey = new CosmoEyes(box, { scale: 1.8 }); setTimeout(function(){ ey.setState('happy'); ey.pulse('heart'); }, 400); }
+    if (box && window.CosmoEyes) { var ey = new CosmoEyes(box, { scale: 1.8 }); setTimeout(function(){ ey.pulse('heart'); }, 400); } // stay open (idle) + heart, not the closed 'happy' squint
   });
 </script>
 

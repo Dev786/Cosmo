@@ -75,6 +75,20 @@ function cosmo_config(): ?array
                     explode(',', (string)env('RAZORPAY_PRESETS', '99,199,499'))
                 ))),
             ],
+            'paypal' => [
+                'client_id'  => env('PAYPAL_CLIENT_ID', ''),
+                'secret'     => env('PAYPAL_SECRET', ''),
+                'webhook_id' => env('PAYPAL_WEBHOOK_ID', ''),
+                'env'        => env('PAYPAL_ENV', 'sandbox'),  // 'sandbox' | 'live'
+            ],
+            'payments' => [
+                'enabled_currencies' => array_values(array_intersect(
+                    array_map('trim', explode(',', (string)env('PAYMENT_CURRENCIES', 'INR,USD,EUR,GBP'))),
+                    ['INR', 'USD', 'EUR', 'GBP']
+                )),
+                'default_currency'   => env('PAYMENT_DEFAULT_CURRENCY', 'USD'),
+                'foreign_processor'  => env('FOREIGN_PROCESSOR', 'paypal'),  // 'paypal' | 'razorpay'
+            ],
             'repo_url'                => (string)env('REPO_URL', ''),
             'require_payment_for_url' => filter_var(env('REQUIRE_PAYMENT_FOR_URL', 'false'), FILTER_VALIDATE_BOOLEAN),
             'admin_password_hash'     => (string)env('ADMIN_PASSWORD_HASH', ''),

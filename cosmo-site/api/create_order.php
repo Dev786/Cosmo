@@ -1,59 +1,52 @@
 <?php
-/** Create a Razorpay order (server-side, with the secret key) and record it as a
- *  pending donation. Returns what Razorpay Checkout needs in the browser. */
+/** Create a payment order with the processor that serves the visitor's currency:
+ *  INR→Razorpay, foreign→FOREIGN_PROCESSOR (PayPal). Currency is decided server-side
+ *  (override∈enabled → geo → default) and the floor is enforced here. */
 require_once __DIR__ . '/../includes/api.php';
-require_post();
-$cfg = api_config();
-$rzp = $cfg['razorpay'];
+require_once __DIR__ . '/../includes/geo.php';
+require_once __DIR__ . '/../includes/currency.php';
+require_once __DIR__ . '/../includes/processors/registry.php';
 
-if (empty($rzp['key_id']) || empty($rzp['key_secret']) || stripos($rzp['key_id'], 'REPLACE') !== false) {
-    json_out(['error' => 'Tipping is not configured yet.'], 503);
+require_post();
+require_same_origin();
+rate_limit('order', 12, 600);
+
+$cfg = api_config();
+$pay = $cfg['payments'] ?? ['enabled_currencies' => ['INR'], 'default_currency' => 'INR', 'foreign_processor' => 'paypal'];
+
+$in       = json_input();
+$email    = strtolower(trim((string)($in['email'] ?? '')));
+$amount   = (int)($in['amount'] ?? 0);
+$override = isset($in['currency']) ? (string)$in['currency'] : null;
+
+$geoIso = geo_lookup(client_ip())['countryCode'] ?? '';
+$cur    = resolve_currency($override, $geoIso, $pay['enabled_currencies'], (string)$pay['default_currency']);
+$meta   = currency_meta($cur);
+
+if ($amount < $meta['floor'] || $amount > $meta['max']) {
+    json_out(['error' => "Pick at least {$meta['symbol']}{$meta['floor']}."], 422);
 }
 
-$in     = json_input();
-$rupees = (int)($in['amount'] ?? 0);
-$email  = strtolower(trim((string)($in['email'] ?? '')));
-if ($rupees < 1 || $rupees > 100000) json_out(['error' => 'Pick an amount between ₹1 and ₹1,00,000.'], 422);
-$paise = $rupees * 100;
+$procId  = processor_for_currency($cur, (string)$pay['foreign_processor']);
+$minor   = to_minor($amount, $cur);
+$receipt = 'cosmo_' . bin2hex(random_bytes(6));   // ≤40 chars, unique → also the provider idempotency key
 
-$payload = json_encode([
-    'amount'   => $paise,
-    'currency' => $rzp['currency'],
-    'receipt'  => 'cosmo_' . bin2hex(random_bytes(6)),
-    'notes'    => ['email' => $email, 'product' => 'Cosmo coffee'],
-]);
-
-$ch = curl_init('https://api.razorpay.com/v1/orders');
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_USERPWD        => $rzp['key_id'] . ':' . $rzp['key_secret'],
-    CURLOPT_POST           => true,
-    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-    CURLOPT_POSTFIELDS     => $payload,
-    CURLOPT_TIMEOUT        => 15,
-]);
-$resp = curl_exec($ch);
-$http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-$order = json_decode((string)$resp, true);
-if ($resp === false || $http >= 400 || empty($order['id'])) {
+try {
+    $proc  = processor_get($procId);
+    $order = $proc->createOrder($minor, $cur, $email, $receipt);
+} catch (Throwable $e) {
     json_out(['error' => 'Could not start the payment. Please try again.'], 502);
 }
 
-// Record the pending order so verify_payment can confirm + complete it.
+// Record the pending order so the webhook / verify can complete it.
 try {
-    $stmt = db()->prepare(
-        'INSERT INTO donations (created_at, email, amount_paise, currency, razorpay_order_id, status)
-         VALUES (NOW(), :email, :amt, :cur, :oid, "created")'
-    );
-    $stmt->execute([':email' => $email, ':amt' => $paise, ':cur' => $rzp['currency'], ':oid' => $order['id']]);
-} catch (Throwable $e) { /* non-fatal: payment can still proceed */ }
+    db()->prepare(
+        'INSERT INTO donations (created_at, email, amount_paise, currency, country, ip_hash, processor, razorpay_order_id, status)
+         VALUES (NOW(), :email, :amt, :cur, :country, :iph, :proc, :oid, "created")'
+    )->execute([
+        ':email' => $email, ':amt' => $minor, ':cur' => $cur, ':country' => substr($geoIso, 0, 2),
+        ':iph' => ip_hash(client_ip()), ':proc' => $procId, ':oid' => $order['order_id'],
+    ]);
+} catch (Throwable $e) { /* non-fatal: payment can still proceed (e.g. before the migration runs) */ }
 
-json_out([
-    'ok'       => true,
-    'order_id' => $order['id'],
-    'key_id'   => $rzp['key_id'],
-    'amount'   => $paise,
-    'currency' => $rzp['currency'],
-]);
+json_out(['ok' => true, 'provider' => $procId, 'currency' => $cur] + $order['client']);
