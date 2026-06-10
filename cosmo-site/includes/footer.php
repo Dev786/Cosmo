@@ -41,13 +41,17 @@ $year = date('Y');
     <form id="funnel-form" novalidate>
       <input class="field" type="email" name="email" inputmode="email" autocomplete="email" placeholder="you@email.com" required>
       <div class="tips">
-        <span class="tips__label">Buy me a coffee <em>(optional)</em></span>
-        <div class="tips__row" id="tip-row">
-          <input class="tip-custom" type="number" min="1" step="1" name="custom" placeholder="custom">
+        <div class="tips__head">
+          <span class="tips__label">Buy me a coffee <em>(optional)</em></span>
+          <span class="tips__cur">
+            <label for="cur-select" class="tips__curlabel">Currency</label>
+            <select id="cur-select" aria-label="Currency"></select>
+          </span>
         </div>
-        <div class="tips__cur">
-          <label for="cur-select" class="tips__curlabel">Currency</label>
-          <select id="cur-select" aria-label="Currency"></select>
+        <div class="tips__presets" id="tip-row"></div>
+        <div class="tips__custom">
+          <span class="tips__sym" id="cur-sym" aria-hidden="true">₹</span>
+          <input class="tips__custom-input" type="number" min="1" step="1" inputmode="numeric" name="custom" placeholder="Custom amount" aria-label="Custom amount">
         </div>
         <div id="paypal-buttons" hidden></div>
       </div>
@@ -57,13 +61,6 @@ $year = date('Y');
     </form>
   </div>
 </div>
-
-<style>
-  .tips__cur{display:flex;align-items:center;gap:8px;margin:10px 0 2px}
-  .tips__curlabel{font-size:.82rem;color:var(--muted)}
-  #cur-select{padding:6px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;background:var(--card);cursor:pointer}
-  #paypal-buttons{margin-top:12px}
-</style>
 
 <!-- Tracking consent -->
 <div class="cookie" id="cookie" hidden>

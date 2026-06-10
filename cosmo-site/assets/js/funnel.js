@@ -52,21 +52,23 @@
     if (custom && parseInt(custom.value, 10) !== selectedAmt) custom.value = '';
   }
 
-  // Build presets + currency <select> for the active currency.
+  // Build the preset grid + currency <select> + symbol prefix for the active currency.
   function renderCurrencyUI() {
     const row = document.getElementById('tip-row');
     if (!row) return;
-    const custom = row.querySelector('input[name=custom]');
-    row.querySelectorAll('.tip').forEach((b) => b.remove());
     const m = meta();
+    row.innerHTML = '';
     (m.presets || []).forEach((amt) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'tip'; b.dataset.amt = String(amt);
       b.textContent = m.symbol + amt;
       b.addEventListener('click', () => selectAmount(amt));
-      row.insertBefore(b, custom);
+      row.appendChild(b);
     });
-    if (custom) custom.placeholder = m.symbol + ' custom';
+    const sym = document.getElementById('cur-sym');
+    if (sym) sym.textContent = m.symbol;
+    const custom = form && form.querySelector('input[name=custom]');
+    if (custom) custom.value = '';
     const sel = document.getElementById('cur-select');
     if (sel) {
       if (!sel.dataset.built) {
@@ -222,6 +224,13 @@
     b.addEventListener('click', () => openFunnel(parseInt(b.dataset.amt, 10))));
   if (modal) modal.querySelectorAll('[data-close]').forEach((x) => x.addEventListener('click', closeFunnel));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFunnel(); });
+
+  // Typing a custom amount deselects the preset chips (they're mutually exclusive).
+  const customInput = form && form.querySelector('input[name=custom]');
+  if (customInput) customInput.addEventListener('input', () => {
+    selectedAmt = 0;
+    document.querySelectorAll('#tip-row .tip').forEach((b) => b.classList.remove('is-sel'));
+  });
 
   // ---- tracking consent banner ----
   const cookie = document.getElementById('cookie');

@@ -589,7 +589,6 @@ code { font-family: var(--mono); font-size: .9em; background: rgba(30,30,46,.06)
 }
 .tip:hover { border-color: var(--blue); transform: translateY(-2px); }
 .tip.is-sel { background: var(--blue); color: #fff; border-color: var(--blue); }
-.tip-custom { width: 110px; padding: 13px; border: 1.5px solid var(--line); border-radius: var(--r-sm); font-size: 1rem; font-family: var(--sans); }
 
 /* ---------- modal ---------- */
 .modal { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; }
@@ -609,8 +608,18 @@ code { font-family: var(--mono); font-size: .9em; background: rgba(30,30,46,.06)
 .field:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(74,158,255,.16); }
 .tips__label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .tips__label em { font-style: normal; opacity: .7; }
-.tips__row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 14px; }
-.tips__row .tip { padding: 9px 14px; font-size: .98rem; min-width: 0; }
+.tips__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0 10px; }
+.tips__cur { display: inline-flex; align-items: center; gap: 7px; }
+.tips__curlabel { font-size: .82rem; color: var(--muted); }
+#cur-select { padding: 6px 9px; border: 1.5px solid var(--line); border-radius: var(--r-sm); font: inherit; font-size: .9rem; background: var(--surface); cursor: pointer; }
+.tips__presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 10px; }
+.tips__presets .tip { padding: 11px 4px; font-size: 1rem; min-width: 0; text-align: center; }
+.tips__custom { position: relative; margin: 0 0 14px; }
+.tips__sym { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 600; pointer-events: none; }
+.tips__custom-input { width: 100%; padding: 12px 14px 12px 32px; border: 1.5px solid var(--line); border-radius: var(--r-sm); font-size: 1rem; font-family: var(--sans); appearance: textfield; -moz-appearance: textfield; }
+.tips__custom-input::-webkit-outer-spin-button, .tips__custom-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.tips__custom-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(74,158,255,.16); }
+#paypal-buttons { margin-top: 4px; }
 .consent { display: flex; gap: 9px; align-items: flex-start; font-size: .86rem; color: var(--muted); margin-bottom: 16px; }
 .consent input { margin-top: 3px; }
 .modal__msg { text-align: center; font-size: .9rem; min-height: 1.2em; margin: 12px 0 0; }
