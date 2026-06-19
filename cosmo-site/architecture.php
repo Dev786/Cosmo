@@ -1,7 +1,40 @@
 <?php
 $page = 'architecture';
-$title = 'Architecture — How Cosmo works under the hood';
-$desc = 'A guided tour under the hood of Cosmo: the three hard boundaries, single-owner mood, the privacy line, the ReAct brain, the voice pipeline, and local memory — written so you could rebuild it from scratch.';
+$title = 'How a local AI voice assistant works: STT → LLM → TTS | Cosmo';
+$desc = 'A from-scratch tour of how a local-first AI voice assistant is built: voice activity detection, on-device speech-to-text, semantic end-of-turn detection, a ReAct LLM brain with vendor-neutral tool calls, local text-to-speech, semantic memory, and the privacy boundaries — using Cosmo as the worked example.';
+require_once __DIR__ . '/includes/seo.php';
+$cfg = cosmo_config();
+$base = cosmo_site_url($cfg) ?: 'https://example.com';
+// FAQ — rendered visibly below AND as FAQPage schema (Google requires both to match).
+// Deep "how it works" angle, distinct from the home and features FAQs.
+$faq = [
+  ['How does a local AI voice assistant work, end to end?', 'The pipeline is: your microphone feeds voice activity detection (VAD), which isolates speech; on-device speech-to-text (STT) turns it into text; a language-model brain reasons over it and calls tools in a reason → act → observe loop; and text-to-speech (TTS) speaks the reply. In Cosmo every step is local-first, and the model only ever sees what you actually said.'],
+  ['What is voice activity detection (VAD) and why is it needed?', 'VAD decides, moment to moment, whether you are speaking or silent, so the assistant processes real speech instead of constantly transcribing room noise. Cosmo runs a Silero VAD model on-device, continuously, and gates the rest of the pipeline behind it.'],
+  ['What is semantic end-of-turn detection, and how is it different from a silence timeout?', 'A fixed silence timeout often cuts you off mid-thought or feels laggy. Semantic end-of-turn detection uses a small model (Smart Turn) to predict whether you have actually finished your turn, so Cosmo replies at the right moment. If that model is unavailable, it falls back to silence detection.'],
+  ['How does on-device speech-to-text work?', 'Cosmo runs an ONNX speech-recognition model (Moonshine by default, or Whisper) through transformers.js in a worker process, entirely on your machine. The model downloads once on first use and is cached; after that, transcription needs no network and your audio never leaves the device.'],
+  ['How can one assistant use a local model and a cloud model interchangeably?', 'A provider abstraction hides every LLM behind one interface. Capable models use native function-calling; smaller or local models fall back to a vendor-neutral fenced-JSON tool protocol. That keeps a 7B local model on Ollama and a frontier cloud model interchangeable — the personality, tools, and memory stay identical.'],
+  ['What does the AI actually see — is my screen or typing sent to it?', 'Only what you explicitly type or say. Window titles, URLs, typing cadence, and your screen are never put into AI requests; Cosmo never logs keystrokes and never opens your webcam. With a local model, nothing leaves your machine at all.'],
+  ['How does on-device semantic memory work?', 'Cosmo stores past conversation snippets as vectors using a local embedding model, then retrieves the most relevant ones by similarity when you ask something new — a small retrieval-augmented memory that runs on your machine, with no cloud database.'],
+];
+$jsonld = [
+  [
+    '@context'         => 'https://schema.org',
+    '@type'            => 'TechArticle',
+    'headline'         => 'How a local-first AI voice assistant works',
+    'description'      => $desc,
+    'mainEntityOfPage' => $base . '/architecture',
+    'inLanguage'       => 'en',
+    'author'           => ['@id' => $base . '/#author'],
+    'publisher'        => ['@id' => $base . '/#author'],
+    'about'            => array_map(fn($t) => ['@type' => 'Thing', 'name' => $t], [
+      'Speech recognition', 'Speech synthesis', 'Voice user interface',
+      'Large language model', 'On-device machine learning', 'Privacy',
+    ]),
+    'keywords'         => 'local voice assistant architecture, on-device STT, local TTS, end-of-turn detection, ReAct agent, tool calling, Ollama, private AI',
+  ],
+  cosmo_breadcrumbs($cfg, [['Home', '/'], ['Architecture', '/architecture']]),
+  cosmo_faq_jsonld($faq),
+];
 require __DIR__ . '/includes/header.php';
 ?>
 
@@ -575,7 +608,7 @@ memory/YYYY-MM-DD.md   # daily notes — compaction folds into these</pre>
       </ol>
       <div class="center" style="margin-top:30px">
         <a class="btn btn--primary js-funnel" href="#">Get the code →</a>
-        <a class="btn btn--ghost" href="features.php">See the full feature list</a>
+        <a class="btn btn--ghost" href="/features">See the full feature list</a>
       </div>
       <div class="chapter-nav"><a href="#boot">← Waking up</a><a href="#payments">Bonus: how this site takes payments ↓</a></div>
     </section>
@@ -725,5 +758,14 @@ markPaidOnce(order_id)                               <span>// verified → relea
     }
   });
 </script>
+
+<section class="band band--tint" id="faq">
+  <div class="wrap">
+    <span class="eyebrow eyebrow--blue">Questions</span>
+    <h2 class="center">How Cosmo works — FAQ</h2>
+    <p class="lead center">Common questions about building a local-first, on-device AI voice assistant.</p>
+    <?= cosmo_faq_html($faq) ?>
+  </div>
+</section>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

@@ -1,7 +1,10 @@
 <?php
 $page = 'setup';
-$title = 'Setup — Cosmo';
-$desc = 'Get Cosmo running in a few minutes. Every step spelled out, plus a one-command setup script that works on macOS, Linux, and Windows.';
+$title = 'Install Cosmo — set up a local-first AI voice assistant on macOS';
+$desc = 'Get Cosmo running in a few minutes: a one-command setup script for macOS, Linux and Windows, then choose a local (Ollama) or cloud LLM brain and a local or cloud voice. Every step spelled out.';
+require_once __DIR__ . '/includes/seo.php';
+$cfg = cosmo_config();
+$jsonld = [cosmo_breadcrumbs($cfg, [['Home', '/'], ['Setup', '/setup']])];
 require __DIR__ . '/includes/header.php';
 // setup.sh ships at the app repo root. Once the repo is public, this raw URL is
 // the from-scratch one-liner (it clones the repo, installs, builds).

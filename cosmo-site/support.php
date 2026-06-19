@@ -1,7 +1,10 @@
 <?php
 $page = 'support';
-$title = 'Buy me a coffee — Cosmo';
-$desc = 'Cosmo is free and open source. If he makes your day a little better, buy me a coffee — it keeps the eyes blinking and the features coming.';
+$title = 'Support Cosmo — buy me a coffee for a free, open-source AI assistant';
+$desc = 'Cosmo is a free, open-source AI desktop assistant. If he makes your day a little better, buy me a coffee — it keeps the eyes blinking and the features coming.';
+require_once __DIR__ . '/includes/seo.php';
+$cfg = cosmo_config();
+$jsonld = [cosmo_breadcrumbs($cfg, [['Home', '/'], ['Support', '/support']])];
 require __DIR__ . '/includes/header.php';
 $rzp = (cosmo_config()['razorpay'] ?? ['preset_amounts' => [99, 199, 499]]);
 ?>

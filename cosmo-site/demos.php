@@ -1,8 +1,11 @@
 <?php
 $page = 'demos';
-$title = 'Demos — Cosmo';
-$desc = 'Cosmo, floating on a Mac right in your browser — drag him around the screen, hover to reveal his control rail, talk or type, watch him search, and hear his real on-device voice. Mute him and just chat — every feature still works.';
+$title = 'Cosmo demo — try a local AI desktop assistant in your browser';
+$desc = 'Try Cosmo right in your browser: drag the floating character around, talk or type, watch him search and use tools, and hear his real on-device voice. A live demo of a local-first, private AI desktop assistant.';
 $page_scripts = ['assets/js/demo.js'];
+require_once __DIR__ . '/includes/seo.php';
+$cfg = cosmo_config();
+$jsonld = [cosmo_breadcrumbs($cfg, [['Home', '/'], ['Demos', '/demos']])];
 require __DIR__ . '/includes/header.php';
 ?>
 

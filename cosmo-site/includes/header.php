@@ -1,17 +1,18 @@
 <?php
 /** Shared page head + nav. Set $page (nav highlight), $title, $desc before include. */
 require_once __DIR__ . '/track.php';
+require_once __DIR__ . '/seo.php';
 $cfg   = cosmo_config();
 $page  = $page  ?? '';
-$title = $title ?? 'Cosmo — your little desktop buddy';
-$desc  = $desc  ?? 'A tiny, always-on-top desktop companion with big expressive eyes and a local-first voice. Curious heart, sharp mind.';
+$title = $title ?? 'Cosmo — local-first AI desktop assistant with voice';
+$desc  = $desc  ?? 'Cosmo is a free, open-source desktop AI companion with on-device speech-to-text, text-to-speech, and a pluggable local or cloud LLM brain. Private by design — your voice and screen stay on your machine.';
 $nav = [
-    'home'         => ['index.php', 'Home'],
-    'features'     => ['features.php', 'Features'],
-    'architecture' => ['architecture.php', 'Architecture'],
-    'demos'        => ['demos.php', 'Demos'],
-    'setup'        => ['setup.php', 'Setup'],
-    'support'      => ['support.php', 'Support'],
+    'home'         => ['/', 'Home'],
+    'features'     => ['/features', 'Features'],
+    'architecture' => ['/architecture', 'Architecture'],
+    'demos'        => ['/demos', 'Demos'],
+    'setup'        => ['/setup', 'Setup'],
+    'support'      => ['/support', 'Support'],
 ];
 ?><!DOCTYPE html>
 <html lang="en">
@@ -20,9 +21,7 @@ $nav = [
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= e($title) ?></title>
 <meta name="description" content="<?= e($desc) ?>">
-<meta property="og:title" content="<?= e($title) ?>">
-<meta property="og:description" content="<?= e($desc) ?>">
-<meta property="og:type" content="website">
+<?php cosmo_seo_head($cfg, $title, $desc, $jsonld ?? []); ?>
 <meta name="theme-color" content="#1e1e2e">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="apple-touch-icon" href="assets/favicon.svg">
@@ -33,7 +32,7 @@ $nav = [
 </head>
 <body data-page="<?= e($page) ?>">
 <header class="nav">
-  <a class="nav__brand" href="index.php" aria-label="Cosmo home">
+  <a class="nav__brand" href="/" aria-label="Cosmo home">
     <span class="brand-eyes" aria-hidden="true"><i></i><i></i></span>
     <span class="brand-name">Cosmo</span>
   </a>

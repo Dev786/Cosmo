@@ -1,7 +1,24 @@
 <?php
 $page = 'features';
-$title = 'Features — Cosmo';
-$desc = 'Everything Cosmo can do: expressive eyes, local-first voice, a pluggable AI brain, a real tool system, semantic memory, an Obsidian vault mirror, and gentle work-coaching.';
+$title = 'Cosmo features: local voice (STT & TTS), pluggable LLM brain & tools';
+$desc = 'Everything Cosmo can do: expressive animated eyes, on-device speech-to-text and text-to-speech, a pluggable local (Ollama) or cloud LLM brain, a vendor-neutral tool system, semantic memory, an Obsidian vault mirror, and gentle work-coaching — all local-first and private.';
+require_once __DIR__ . '/includes/seo.php';
+$cfg = cosmo_config();
+// FAQ — rendered visibly below AND as FAQPage schema (Google requires both to match).
+// Feature/capability angle, distinct from the home and architecture FAQs.
+$faq = [
+  ['What can Cosmo do besides chat?', 'Cosmo runs real tasks through an extensible tool system: web search (with sources), opening Mac apps and websites, timers, reminders, notes and tasks, weather, and music and volume control — all by voice or text.'],
+  ['Can I add my own tools, voices, or AI providers?', 'Yes — Cosmo is extensible by design. Expression packs, tools, and AI providers each live behind a clean contract, so you can add one without touching the others. Adding a new provider is typically a few lines of configuration.'],
+  ['What does Cosmo remember, and where is it stored?', 'Cosmo has on-device semantic memory: a local vector store plus local embeddings surface the parts of past conversations relevant to what you are asking now. Your chat history is a plain file on your machine that you can read or clear anytime — nothing is stored in the cloud.'],
+  ['What is the Obsidian vault mirror?', 'Notes, tasks, reminders, and a daily activity log are mirrored as plain Markdown into an Obsidian vault you own. You can open, edit, or delete them in Obsidian (or any text editor); Cosmo just keeps the files in sync.'],
+  ['Does the work-coaching feature track or spy on me?', 'No. Cosmo notices idle stretches and time spent in distracting apps using idle-time and your active app only — never keystrokes, never your screen. It nudges with expression rather than nagging, day insights are computed on-device, and the optional Smart Focus only ever sends an app name and window title to your own model — never URLs or history.'],
+  ['Can I change Cosmo\'s voice and personality?', 'Yes. Pick a local voice (Kokoro) or a cloud voice, and Cosmo expresses eight moods through animated eyes. He is quiet by default — proactive speech is off until you enable it — so he only speaks when spoken to.'],
+  ['What platform does Cosmo run on?', 'Cosmo is a macOS desktop app — a small, always-on-top window that floats over your work. Its AI brain can run locally with Ollama or against a cloud provider using your own API key.'],
+];
+$jsonld = [
+  cosmo_breadcrumbs($cfg, [['Home', '/'], ['Features', '/features']]),
+  cosmo_faq_jsonld($faq),
+];
 require __DIR__ . '/includes/header.php';
 ?>
 
@@ -67,6 +84,14 @@ require __DIR__ . '/includes/header.php';
 
   <div class="center" style="margin-top:40px">
     <a class="btn btn--primary js-funnel" href="#">Get Cosmo →</a>
+  </div>
+</section>
+
+<section class="band band--tint" id="faq">
+  <div class="wrap">
+    <span class="eyebrow eyebrow--blue">Questions</span>
+    <h2 class="center">Features, in plain terms</h2>
+    <?= cosmo_faq_html($faq) ?>
   </div>
 </section>
 

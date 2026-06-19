@@ -1,8 +1,24 @@
 <?php
 $page = 'home';
-$title = 'Cosmo — a tiny desktop buddy with big eyes';
-$desc = 'Cosmo is an always-on-top desktop companion with big expressive eyes and a local-first voice. Curious heart, sharp mind — he hears you, helps you, and lives on your machine.';
+$title = 'Cosmo — local-first AI desktop assistant for macOS (voice, STT & TTS)';
+$desc = 'Cosmo is a free, open-source AI desktop companion for macOS: an expressive on-screen character you talk to, with on-device speech-to-text and text-to-speech and a pluggable local (Ollama) or cloud LLM brain. Private by design.';
 $page_scripts = ['assets/js/home.js'];
+require_once __DIR__ . '/includes/seo.php';
+$cfg = cosmo_config();
+// One source of truth for the FAQ — rendered visibly below AND as FAQPage schema
+// (Google requires the structured Q&As to be visible on the page).
+$faq = [
+  ['What is Cosmo?', 'Cosmo is a free, open-source AI desktop assistant for macOS — a small, always-on-top animated character you can talk to. It has an on-device voice pipeline (speech-to-text and text-to-speech) and a pluggable LLM brain that runs locally or in the cloud.'],
+  ['Does Cosmo run locally and work offline?', 'Yes. Cosmo is local-first: speech recognition and the "Cosmo" wake word run on-device, and you can run the language model fully locally with Ollama. With a local model, Cosmo needs no internet connection and no cloud account.'],
+  ['Is Cosmo private? Does it send my data to the cloud?', 'Privacy is built into the architecture. Cosmo never opens your webcam, never logs keystrokes, and never sends your window titles or screen anywhere. The AI only ever sees what you explicitly type or say — and with a local model, nothing leaves your machine.'],
+  ['What is the difference between local and cloud TTS and STT?', "Speech-to-text (STT) turns your voice into text; text-to-speech (TTS) turns Cosmo's replies into a spoken voice. Cosmo runs STT on-device and offers both a local voice and cloud voices. Cloud voices can sound richer; local keeps everything offline and free."],
+  ['Is Cosmo free?', 'Yes. Cosmo is free and open source under the Apache-2.0 license. You only pay if you choose a cloud LLM or voice and bring your own API key; with Ollama and the local voice it is completely free.'],
+  ['Which AI models and providers does Cosmo support?', "Cosmo's brain is pluggable: OpenAI, Anthropic, Google Gemini, xAI Grok, DeepSeek, Groq and Cerebras, or a fully local model via Ollama. The character, eyes and tools stay the same whichever you choose."],
+];
+$jsonld = [
+  cosmo_softwareapp_jsonld($cfg),
+  cosmo_faq_jsonld($faq),
+];
 require __DIR__ . '/includes/header.php';
 ?>
 
@@ -13,7 +29,7 @@ require __DIR__ . '/includes/header.php';
   <p class="lead center">A tiny companion that lives on your desktop — big expressive eyes, a voice you can talk to, and a knack for actually getting things done. Childlike heart, sharp mind.</p>
   <div class="hero__cta">
     <a class="btn btn--primary js-funnel" href="#">Get Cosmo →</a>
-    <a class="btn btn--ghost" href="demos.php">See him move</a>
+    <a class="btn btn--ghost" href="/demos">See him move</a>
   </div>
   <p class="hero__hint">Tip: move your cursor — he's watching. 👀</p>
 
@@ -77,8 +93,8 @@ require __DIR__ . '/includes/header.php';
   <h2>Swap the model, keep the character</h2>
   <p class="lead center">Cosmo speaks to OpenAI, Anthropic, Google Gemini, xAI Grok, DeepSeek, Groq, Cerebras — or a fully local model via Ollama. The personality, the eyes, and the tools stay exactly the same.</p>
   <div class="hero__cta">
-    <a class="btn btn--ghost" href="features.php">Full feature list</a>
-    <a class="btn btn--ghost" href="architecture.php">How it's built →</a>
+    <a class="btn btn--ghost" href="/features">Full feature list</a>
+    <a class="btn btn--ghost" href="/architecture">How it's built →</a>
   </div>
 </section>
 
@@ -88,9 +104,16 @@ require __DIR__ . '/includes/header.php';
     <p class="lead center">Cosmo is open source. If he makes you smile, you can chip in — totally optional.</p>
     <div class="hero__cta">
       <a class="btn btn--primary js-funnel" href="#">Get Cosmo on GitHub</a>
-      <a class="btn btn--ghost" href="support.php">Buy me a coffee</a>
+      <a class="btn btn--ghost" href="/support">Buy me a coffee</a>
     </div>
   </div>
+</section>
+
+<section class="wrap" id="faq">
+  <span class="eyebrow eyebrow--blue">Questions</span>
+  <h2 class="center">Cosmo FAQ</h2>
+  <p class="lead center">What a local-first, private AI desktop assistant actually means — in plain terms.</p>
+  <?= cosmo_faq_html($faq) ?>
 </section>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

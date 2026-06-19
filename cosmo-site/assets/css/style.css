@@ -640,6 +640,8 @@ code { font-family: var(--mono); font-size: .9em; background: rgba(30,30,46,.06)
 .foot { background: linear-gradient(160deg, #20202e, #16161f); color: rgba(255,255,255,.7); text-align: center; padding: 56px 20px 40px; }
 .foot__brand { display: flex; gap: 10px; align-items: center; justify-content: center; color: #fff; font-family: var(--display); font-weight: 600; font-size: 1.2rem; }
 .foot__tag { margin: 10px 0 18px; }
+.foot__ph { display: inline-block; margin: 0 0 22px; line-height: 0; }
+.foot__ph img { width: 250px; height: 54px; }
 .foot__links { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-bottom: 18px; }
 .foot__links a { color: rgba(255,255,255,.82); font-weight: 500; }
 .foot__links a:hover { color: #fff; }
@@ -795,3 +797,24 @@ code { font-family: var(--mono); font-size: .9em; background: rgba(30,30,46,.06)
   .reveal { opacity: 1 !important; transform: none !important; }
   .hero__eyes::before { opacity: .9 !important; }
 }
+
+/* ── FAQ — native <details> accordion, no JS. Backs the FAQPage schema. ──── */
+.faq { max-width: var(--prose); margin: 28px auto 0; display: flex; flex-direction: column; gap: 10px; }
+.faq__item {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: var(--shadow-s);
+  overflow: hidden; transition: border-color .15s, box-shadow .2s;
+}
+.faq__item[open] { border-color: var(--line-2); box-shadow: var(--shadow-m); }
+.faq__item summary {
+  cursor: pointer; list-style: none; padding: 16px 20px;
+  font-family: var(--display); font-weight: 600; color: var(--ink);
+  display: flex; justify-content: space-between; align-items: center; gap: 14px;
+}
+.faq__item summary::-webkit-details-marker { display: none; }
+.faq__item summary::after {
+  content: "+"; color: var(--blue); font-size: 1.35rem; line-height: 1;
+  transition: transform .2s ease; flex: none;
+}
+.faq__item[open] summary::after { transform: rotate(45deg); }
+.faq__a { padding: 0 20px 18px; color: var(--muted); line-height: 1.62; }

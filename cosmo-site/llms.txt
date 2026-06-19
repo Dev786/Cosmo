@@ -1,0 +1,22 @@
+# Cosmo
+
+> Cosmo is a free, open-source, local-first AI desktop companion for macOS. It pairs an animated always-on-top character with an on-device voice pipeline — speech-to-text (STT), text-to-speech (TTS), wake-word and semantic end-of-turn detection — and a pluggable LLM "brain" that can run fully locally (Ollama) or against a cloud provider with your own API key. Cosmo never opens your webcam, never logs keystrokes, and never sends your window titles or screen anywhere; the model only ever sees what you explicitly type or say. With a local model, nothing leaves your machine at all.
+
+Cosmo is built as a teaching example of how a private, local-first voice assistant is actually wired together: the STT → LLM → TTS loop, a tool-call protocol that works across a 7B local model and a frontier model alike, and the privacy boundaries that keep sensing on-device.
+
+## Pages
+
+- [Home](/): what Cosmo is and how to get it.
+- [Features](/features): expressive eyes, local-first voice, pluggable AI brain, tool system, semantic memory, Obsidian vault mirror, work-coaching.
+- [Architecture](/architecture): a from-scratch tour of how Cosmo works — the three boundaries, the ReAct brain, the on-device voice pipeline (VAD, STT, Smart Turn, TTS), local memory, and the privacy line.
+- [Demos](/demos): Cosmo in motion.
+- [Setup](/setup): installing and configuring Cosmo, including choosing local vs cloud providers.
+
+## Topics this project explains
+
+- Local / on-device voice assistants and why privacy-first sensing matters
+- Speech-to-text (STT) on-device with transformers.js and Moonshine/Whisper
+- Text-to-speech (TTS): local (Kokoro) and cloud voices
+- Voice activity detection (VAD), wake words, and semantic end-of-turn detection
+- Running a local LLM (Ollama) vs cloud providers behind one interface
+- A vendor-neutral tool-calling protocol (fenced-JSON) for AI agents
